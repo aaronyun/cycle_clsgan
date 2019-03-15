@@ -292,8 +292,8 @@ class MLP_SKIP_D(nn.Module):
 class MLP_R(nn.Module):
     def __init__(self, opt):
         super(MLP_R, self).__init__()
-        self.fc1 = nn.Linear(opt.resSize, opt.ngh)
-        self.fc2 = nn.Linear(opt.ngh, opt.attSize)
+        self.fc1 = nn.Linear(opt.resSize, opt.nrh)
+        self.fc2 = nn.Linear(opt.nrh, opt.attSize)
         self.lrelu = nn.LeakyReLU(0.2, True)
         self.relu = nn.ReLU(True)
 

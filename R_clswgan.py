@@ -47,6 +47,8 @@ parser.add_argument('--netD_name', default='')
 parser.add_argument('--ngh', type=int, default=4096, help='size of the hidden units in generator')
 parser.add_argument('--ndh', type=int, default=1024, help='size of the hidden units in discriminator')
 parser.add_argument('--nrh', type=int, default=4096, help='size of the hidden units in R network')
+parser.add_argument('--nrh1', type=int, default=4096, help='size of the hidden units in R network')
+parser.add_argument('--nrh2', type=int, default=2048, help='size of the hidden units in R network')
 parser.add_argument('--nz', type=int, default=312, help='size of the latent z vector')
 
 parser.add_argument('--lr', type=float, default=0.0001, help='learning rate to train GANs ')
@@ -88,7 +90,6 @@ print(opt)
 
 ################################################################################
 
-
 try:
     os.makedirs(opt.outf)
 except OSError:
@@ -129,7 +130,8 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-netR = model.MLP_R(opt)
+# netR = model.MLP_R_single(opt)
+netR = model.MLP_R_double(opt)
 # if opt.netR != '':
 #     netR.load_state_dict(torch.load(opt.netR))
 print(netR)
@@ -245,7 +247,6 @@ for epoch in range(opt.nepoch):
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
-
             sample()
 
             netD.zero_grad() # 设置梯度为0，重新开始一次计算
@@ -270,16 +271,17 @@ for epoch in range(opt.nepoch):
             criticD_fake = criticD_fake.mean()
             criticD_fake.backward(one)
 
-            # 梯度惩罚
+            # 梯度惩罚项
             gradient_penalty = calc_gradient_penalty(netD, input_res, fake.data, input_att)
             gradient_penalty.backward()
 
-            Wasserstein_D = criticD_real - criticD_fake
-            D_cost = criticD_fake - criticD_real + gradient_penalty #?为什么取反？
-            optimizerD.step() # 进行一次参数更新
+            Wasserstein_D = criticD_real - criticD_fake # 计算用于展示
+
+            D_cost = criticD_fake - criticD_real + gradient_penalty
+            optimizerD.step()
 
         #!###########################
-        #! (2) Update G network: optimize WGAN-GP objective, Equation (2)
+        #! 更新G网络：优化WGAN-GP目标函数，论文中式（2）
         #!##########################
         for p in netD.parameters():
             p.requires_grad = False # 避免D网络更新
@@ -289,21 +291,20 @@ for epoch in range(opt.nepoch):
         input_attv = Variable(input_att)
         noise.normal_(0, 1)
         noisev = Variable(noise)
-        fake = netG(noisev, input_attv)
 
+        fake = netG(noisev, input_attv)
         criticG_fake = netD(fake, input_attv)
+
         criticG_fake = criticG_fake.mean()
         G_cost = -criticG_fake
 
         c_errG = cls_criterion(pretrain_cls.model(fake), Variable(input_label))
 
         #!###########################
-        #! 每进行一个batch的训练，就对R网络进行一次更新
+        #! 对R网络进行与G同步的训练
         #!##########################
-
         netR.zero_grad()
 
-        # syn_features = Variable(fake)
         syn_att = netR(fake)
 
         R_cost = R_criterion(syn_att, input_attv)
@@ -312,8 +313,9 @@ for epoch in range(opt.nepoch):
         errR.backward(retain_graph=True)
         optimizerR.step()
 
-        # 因为R网络存在的目的是提升G网络的能力，所以把损失加到G的zong损失上
-        errG = G_cost + opt.cls_weight * c_errG + opt.cycle_weight * errR
+        # 因为R网络存在的目的是提升G网络的能力，所以把损失加到G的总损失上
+        # errG = G_cost + opt.cls_weight * c_errG + opt.cycle_weight * errR
+        errG = G_cost + opt.cls_weight * c_errG + errR
         errG.backward()
         optimizerG.step()
 

@@ -289,6 +289,20 @@ class MLP_SKIP_D(nn.Module):
         h = self.sigmoid(self.fc2(h+h2))
         return h
 
+# 线性映射R网络
+class MLP_R(nn.Module):
+    def __init__(self, opt):
+        super(MLP_R, self).__init__()
+        self.fc = nn.Linear(opt.resSize, opt.attSize)
+        self.relu = nn.ReLU(True)
+
+        self.apply(weights_init)
+
+    def forward(self, res):
+        h = self.relu(self.fc(res))
+        return h
+
+# 单隐藏层R网络
 class MLP_R_single(nn.Module):
     def __init__(self, opt):
         super(MLP_R_single, self).__init__()
@@ -296,26 +310,38 @@ class MLP_R_single(nn.Module):
         self.fc2 = nn.Linear(opt.nrh, opt.attSize)
         self.lrelu = nn.LeakyReLU(0.2, True)
         self.relu = nn.ReLU(True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
 
         self.apply(weights_init)
 
     def forward(self, res):
-        h = self.relu(self.fc1(res))
+        h = self.dropout(res)
+        h = self.relu(self.fc1(h))
+        h = self.dropout(h)
         h = self.lrelu(self.fc2(h))
+
         return h
 
+# 双隐藏层R网络
 class MLP_R_double(nn.Module):
     def __init__(self, opt):
-        super(MLP_R_single, self).__init__()
+        super(MLP_R_double, self).__init__()
         self.fc1 = nn.Linear(opt.resSize, opt.nrh1)
         self.fc2 = nn.Linear(opt.nrh1, opt.nrh2)
-        self.fc3 = nn.Linear(opt.nhr2, opt.attSize)
+        self.fc3 = nn.Linear(opt.nrh2, opt.attSize)
         # 当使用两个隐藏层的时候，各层的激活函数用什么呢
         self.relu = nn.ReLU(True)
         self.lrelu = nn.LeakyReLU(0.2, True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
+
+        self.apply(weights_init)
 
     def forward(self, res):
-        h = self.relu(self.fc1(res))
+        h = self.dropout(res)
+        h = self.relu(self.fc1(h))
+        h = self.dropout(h)
         h = self.relu(self.fc2(h))
+        h = self.dropout(h)
         h = self.lrelu(self.fc3(h))
+
         return h

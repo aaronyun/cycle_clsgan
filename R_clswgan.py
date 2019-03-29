@@ -38,24 +38,24 @@ parser.add_argument('--validation', action='store_true', default=False, help='en
 parser.add_argument('--preprocessing', action='store_true', default=False, help='enbale MinMaxScaler on visual features')
 parser.add_argument('--standardization', action='store_true', default=False)
 
-# model specification
+# network specification
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
 parser.add_argument('--netG_name', default='')
 parser.add_argument('--netD_name', default='')
-
-parser.add_argument('--ngh', type=int, default=4096, help='size of the hidden units in generator')
 parser.add_argument('--ndh', type=int, default=1024, help='size of the hidden units in discriminator')
-parser.add_argument('--nrh', type=int, default=4096, help='size of the hidden units in R network')
+parser.add_argument('--ngh', type=int, default=4096, help='size of the hidden units in generator')
+parser.add_argument('--nz', type=int, default=312, help='size of the latent z vector')
+parser.add_argument('--nrh', type=int, default=1024, help='size of the hidden units in R network')
 parser.add_argument('--nrh1', type=int, default=4096, help='size of the hidden units in R network')
 parser.add_argument('--nrh2', type=int, default=2048, help='size of the hidden units in R network')
-parser.add_argument('--nz', type=int, default=312, help='size of the latent z vector')
+parser.add_argument('--drop_rate', type=float, default=0.2, help='the rate of hidden unit to dropout')
 
 parser.add_argument('--lr', type=float, default=0.0001, help='learning rate to train GANs ')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size')
 parser.add_argument('--nepoch', type=int, default=2000, help='number of epochs to train for')
 parser.add_argument('--cls_weight', type=float, default=1, help='weight of the classification loss')
-parser.add_argument('--cycle_weight', type=float, default=0.01, help='weight of the att generate loss')
+parser.add_argument('--r_weight', type=float, default=0.1, help='weight of the att generate loss')
 
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 
@@ -65,8 +65,7 @@ parser.add_argument('--manualSeed', type=int, help='manual seed')
 parser.add_argument('--critic_iter', type=int, default=5, help='critic iteration, following WGAN-GP')
 parser.add_argument('--cuda', action='store_true', default=False, help='enables cuda')
 
-
-parser.add_argument('--val_every', type=int, default=10)
+parser.add_argument('--val_every', type=int, default=10) # 只在这里出现了
 parser.add_argument('--syn_num', type=int, default=100, help='number features to generate per class')
 parser.add_argument('--lambda1', type=float, default=10, help='gradient penalty regularizer, following WGAN-GP')
 parser.add_argument('--outname', help='folder to output data and model checkpoints')
@@ -81,8 +80,6 @@ parser.add_argument('--print_every', type=int, default=1)
 parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--nclass_all', type=int, default=200, help='number of all classes')
 
-
-# unknown
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
 
 opt = parser.parse_args()
@@ -130,17 +127,16 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
+# netR = model.MLP_R(opt)
 # netR = model.MLP_R_single(opt)
 netR = model.MLP_R_double(opt)
-# if opt.netR != '':
-#     netR.load_state_dict(torch.load(opt.netR))
 print(netR)
 
 ################################################################################
 
 # classification loss, Equation (4) of the paper
 cls_criterion = nn.NLLLoss() # Negative Log Likelihood loss
-R_criterion = nn.CosineSimilarity(dim=1)
+R_criterion = nn.PairwiseDistance()
 
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
 input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
@@ -209,7 +205,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
     if opt.cuda:
         ones = ones.cuda()
 
-    #!用插值作为输入计算判别网络的梯度
+    #!用插值作为输入，计算判别网络的梯度
     #!grad()函数？具体的梯度数据？
     gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates, grad_outputs=ones, create_graph=True, retain_graph=True, only_inputs=True)[0]
 
@@ -233,23 +229,22 @@ for p in pretrain_cls.model.parameters(): # set requires_grad to False
 
 for epoch in range(opt.nepoch):
 
-    # FP = 0 #?干什么用的
+    # FP = 0
 
     # mean_lossD = 0
     # mean_lossG = 0
 
     for i in range(0, data.ntrain, opt.batch_size):
-
-        #!###########################
-        #! (1) Update D network: optimize WGAN-GP objective, Equation (2)
-        #!##########################p
+        # --------------------------------------------
+        # 训练D网络，等式（2）
+        # --------------------------------------------
         for p in netD.parameters(): # reset requires_grad
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
             sample()
 
-            netD.zero_grad() # 设置梯度为0，重新开始一次计算
+            netD.zero_grad()
 
             # 用真实数据训练D
             # sparse_real = opt.resSize - input_res[1].gt(0).sum()
@@ -264,8 +259,8 @@ for epoch in range(opt.nepoch):
             noise.normal_(0, 1)
             noisev = Variable(noise)
             fake = netG(noisev, input_attv)
-            # fake_norm = fake.data[0].norm() #? fake_norm没有使用过
-            # sparse_fake = fake.data[0].eq(0).sum() #? sparse_fake没有使用过
+            # fake_norm = fake.data[0].norm()
+            # sparse_fake = fake.data[0].eq(0).sum()
 
             criticD_fake = netD(fake.detach(), input_attv) # detach(), detached from the current graph
             criticD_fake = criticD_fake.mean()
@@ -275,14 +270,14 @@ for epoch in range(opt.nepoch):
             gradient_penalty = calc_gradient_penalty(netD, input_res, fake.data, input_att)
             gradient_penalty.backward()
 
-            Wasserstein_D = criticD_real - criticD_fake # 计算用于展示
+            Wasserstein_D = criticD_real - criticD_fake
 
             D_cost = criticD_fake - criticD_real + gradient_penalty
             optimizerD.step()
 
-        #!###########################
-        #! 更新G网络：优化WGAN-GP目标函数，论文中式（2）
-        #!##########################
+        # -------------------------------------------
+        # 训练G网络，等式（2）
+        # -------------------------------------------
         for p in netD.parameters():
             p.requires_grad = False # 避免D网络更新
 
@@ -300,33 +295,33 @@ for epoch in range(opt.nepoch):
 
         c_errG = cls_criterion(pretrain_cls.model(fake), Variable(input_label))
 
-        #!###########################
-        #! 对R网络进行与G同步的训练
-        #!##########################
+        # -----------------------
+        # 对R网络进行与G同步的训练
+        # -----------------------
         netR.zero_grad()
 
         syn_att = netR(fake)
 
         R_cost = R_criterion(syn_att, input_attv)
-
         errR = R_cost.mean()
         errR.backward(retain_graph=True)
         optimizerR.step()
 
-        # 因为R网络存在的目的是提升G网络的能力，所以把损失加到G的总损失上
-        # errG = G_cost + opt.cls_weight * c_errG + opt.cycle_weight * errR
-        errG = G_cost + opt.cls_weight * c_errG + errR
+        errG = G_cost + opt.cls_weight * c_errG + opt.r_weight * errR
         errG.backward()
         optimizerG.step()
 
-    # mean_lossG和mean_lossD计算了，但没有输出过
     # mean_lossD /=  data.ntrain / opt.batch_size
     # mean_lossG /=  data.ntrain / opt.batch_size
 
-    print('[%d/%d] Loss_D: %.4f Loss_R: %.4f Loss_G: %.4f, Wasserstein_dist: %.4f, c_errG:%.4f' % (epoch, opt.nepoch, D_cost.data[0], R_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], c_errG.data[0]))
+    # print('[%d/%d] Loss_D:%.4f Loss_G:%.4f Wasserstein_dist:%.4f c_errG:%.4f' % (epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], c_errG.data[0]))
+    # print('%d %.4f %.4f %.4f %.4f' % (epoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], c_errG.data[0]))
+
+    # print('[%d/%d] Loss_D:%.4f Loss_G:%.4f Loss_R:%.4f Wasserstein_dist:%.4f c_errG:%.4f' % (epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], c_errG.data[0]))
+    print('%d %.4f %.4f %.4f %.4f %.4f' % (epoch, D_cost.data[0], G_cost.data[0], errR.data[0], Wasserstein_D.data[0], c_errG.data[0]))
 
     # evaluate the model, set G to evaluation mode
-    netG.eval() #? 具体的作用是什么？
+    netG.eval()
 
     if opt.gzsl: # GZSL，使用简单的多分类网络来做最后的类别判断
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
@@ -336,13 +331,13 @@ for epoch in range(opt.nepoch):
         nclass = opt.nclass_all
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
-        print('unseen=%.4f, seen=%.4f, h=%.4f' % (cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('unseen_class_acc=%.4f, seen_class_acc=%.4f, h=%.4f' % (cls_.acc_unseen, cls_.acc_seen, cls_.H))
     else: # ZSL，使用简单的多分类网络来做最后的类别判断
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
 
         cls_ = classifier2.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
-        print('unseen class accuracy= ', acc)
+        print('unseen_class_acc= ', acc)
 
     # reset G to training mode
     netG.train()

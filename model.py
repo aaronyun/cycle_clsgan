@@ -104,7 +104,7 @@ class MLP_2HL_Dropout_CRITIC(nn.Module):
 class MLP_CRITIC(nn.Module):
     def __init__(self, opt): 
         super(MLP_CRITIC, self).__init__()
-        self.fc1 = nn.Linear(opt.resSize + opt.attSize, opt.ndh) #!注意判别器的输入是视觉特征和属性特征的叠加，也就是将对应的属性作为判别标签
+        self.fc1 = nn.Linear(opt.resSize + opt.attSize, opt.ndh)
         #self.fc2 = nn.Linear(opt.ndh, opt.ndh)
         self.fc2 = nn.Linear(opt.ndh, 1)
         self.lrelu = nn.LeakyReLU(0.2, True)
@@ -294,18 +294,18 @@ class MLP_R(nn.Module):
     def __init__(self, opt):
         super(MLP_R, self).__init__()
         self.fc = nn.Linear(opt.resSize, opt.attSize)
-        self.relu = nn.ReLU(True)
+        self.lrelu = nn.LeakyReLU(0.2, True)
 
         self.apply(weights_init)
 
     def forward(self, res):
-        h = self.relu(self.fc(res))
+        h = self.lrelu(self.fc(res))
         return h
 
 # 单隐藏层R网络
-class MLP_R_single(nn.Module):
+class MLP_1HL_Dropout_R(nn.Module):
     def __init__(self, opt):
-        super(MLP_R_single, self).__init__()
+        super(MLP_1HL_Dropout_R, self).__init__()
         self.fc1 = nn.Linear(opt.resSize, opt.nrh)
         self.fc2 = nn.Linear(opt.nrh, opt.attSize)
         self.lrelu = nn.LeakyReLU(0.2, True)
@@ -315,17 +315,16 @@ class MLP_R_single(nn.Module):
         self.apply(weights_init)
 
     def forward(self, res):
-        h = self.dropout(res)
-        h = self.relu(self.fc1(h))
+        h = self.lrelu(self.fc1(res))
         h = self.dropout(h)
-        h = self.lrelu(self.fc2(h))
+        h = self.relu(self.fc2(h))
 
         return h
 
 # 双隐藏层R网络
-class MLP_R_double(nn.Module):
+class MLP_2HL_Dropout_R(nn.Module):
     def __init__(self, opt):
-        super(MLP_R_double, self).__init__()
+        super(MLP_2HL_Dropout_R, self).__init__()
         self.fc1 = nn.Linear(opt.resSize, opt.nrh1)
         self.fc2 = nn.Linear(opt.nrh1, opt.nrh2)
         self.fc3 = nn.Linear(opt.nrh2, opt.attSize)
@@ -337,11 +336,61 @@ class MLP_R_double(nn.Module):
         self.apply(weights_init)
 
     def forward(self, res):
-        h = self.dropout(res)
-        h = self.relu(self.fc1(h))
+        h = self.lrelu(self.fc1(res))
         h = self.dropout(h)
-        h = self.relu(self.fc2(h))
+        h = self.lrelu(self.fc2(h))
+        h = self.dropout(h)
+        h = self.relu(self.fc3(h))
+
+        return h
+
+class MLP_3HL_Dropout_R(nn.Module):
+    def __init__(self, opt):
+        super(MLP_3HL_Dropout_R, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize, opt.nrh1)
+        self.fc2 = nn.Linear(opt.nrh1, opt.nrh2)
+        self.fc3 = nn.Linear(opt.nrh2, opt.nrh3)
+        self.fc4 = nn.Linear(opt.nrh3, opt.attSize)
+        self.relu = nn.ReLU(True)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
+
+        self.apply(weights_init)
+
+    def forward(self, res):
+        h = self.lrelu(self.fc1(res))
+        h = self.dropout(h)
+        h = self.lrelu(self.fc2(h))
         h = self.dropout(h)
         h = self.lrelu(self.fc3(h))
+        h = self.dropout(h)
+        h = self.relu(self.fc4(h))
+
+        return h
+
+class MLP_4HL_Dropout_R(nn.Module):
+    def __init__(self, opt):
+        super(MLP_4HL_Dropout_R, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize, opt.nrh1)
+        self.fc2 = nn.Linear(opt.nrh1, opt.nrh2)
+        self.fc3 = nn.Linear(opt.nrh2, opt.nrh3)
+        self.fc4 = nn.Linear(opt.nrh3, opt.nrh4)
+        self.fc5 = nn.Linear(opt.nrh4, opt.attSize)
+        self.relu = nn.ReLU(True)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
+
+        self.apply(weights_init)
+
+    def forward(self, res):
+        h = self.lrelu(self.fc1(res))
+        h = self.dropout(h)
+        h = self.lrelu(self.fc2(h))
+        h = self.dropout(h)
+        h = self.lrelu(self.fc3(h))
+        h = self.dropout(h)
+        h = self.lrelu(self.fc4(h))
+        h = self.dropout(h)
+        h = self.relu(self.fc5(h))
 
         return h

@@ -1,5 +1,4 @@
 #!/usr/bin/python3.5
-# -*- coding: utf-8 -*-
 
 from __future__ import print_function
 import sys
@@ -10,6 +9,7 @@ import random
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as tfunc
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
@@ -25,11 +25,11 @@ import model
 parser = argparse.ArgumentParser()
 
 # data specification
-parser.add_argument('--matdataset', default=True, help='Data in matlab format')
 parser.add_argument('--dataroot', default='/data0/docker/xingyun/f_xGAN/data', help='path to dataset')
 parser.add_argument('--dataset', default='FLO', help='FLO')
-parser.add_argument('--class_embedding', default='att')
+parser.add_argument('--matdataset', default=True, help='Data in matlab format')
 parser.add_argument('--image_embedding', default='res101')
+parser.add_argument('--class_embedding', default='att')
 parser.add_argument('--resSize', type=int, default=2048, help='size of visual features')
 parser.add_argument('--attSize', type=int, default=1024, help='size of semantic feqatures')
 
@@ -47,31 +47,32 @@ parser.add_argument('--ndh', type=int, default=1024, help='size of the hidden un
 parser.add_argument('--ngh', type=int, default=4096, help='size of the hidden units in generator')
 parser.add_argument('--nz', type=int, default=312, help='size of the latent z vector')
 parser.add_argument('--nrh', type=int, default=1024, help='size of the hidden units in R network')
-parser.add_argument('--nrh1', type=int, default=4096, help='size of the hidden units in R network')
-parser.add_argument('--nrh2', type=int, default=2048, help='size of the hidden units in R network')
-parser.add_argument('--drop_rate', type=float, default=0.2, help='the rate of hidden unit to dropout')
+parser.add_argument('--nrh1', type=int, default=1024, help='size of the first hidden units in R network')
+parser.add_argument('--nrh2', type=int, default=521, help='size of the second hidden units in R network')
+parser.add_argument('--nrh3', type=int, default=312, help='size of the third hidden units in R network')
+parser.add_argument('--nrh4', type=int, default=156, help='size of the fourth hidden units in R network')
+parser.add_argument('--drop_rate', type=float, default=1, help='the rate of hidden unit to dropout')
 
 parser.add_argument('--lr', type=float, default=0.0001, help='learning rate to train GANs ')
 parser.add_argument('--batch_size', type=int, default=64, help='input batch size')
 parser.add_argument('--nepoch', type=int, default=2000, help='number of epochs to train for')
 parser.add_argument('--cls_weight', type=float, default=1, help='weight of the classification loss')
-parser.add_argument('--r_weight', type=float, default=0.1, help='weight of the att generate loss')
+parser.add_argument('--r_weight', type=float, default=1, help='weight of the att generate loss')
 
-parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 
 # experiment setting
 parser.add_argument('--gzsl', action='store_true', default=False, help='enable generalized zero-shot learning')
-parser.add_argument('--manualSeed', type=int, help='manual seed')
 parser.add_argument('--critic_iter', type=int, default=5, help='critic iteration, following WGAN-GP')
+parser.add_argument('--syn_num', type=int, default=100, help='number features to generate per class')
+parser.add_argument('--classifier_lr', type=float, default=0.001, help='learning rate to train softmax classifier')
+
+parser.add_argument('--manualSeed', type=int, help='manual seed')
+parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
+parser.add_argument('--lambda1', type=float, default=10, help='gradient penalty regularizer, following WGAN-GP')
+parser.add_argument('--val_every', type=int, default=10) # 只在这里出现了
+parser.add_argument('--outname', help='folder to output data and model checkpoints')
 parser.add_argument('--cuda', action='store_true', default=False, help='enables cuda')
 
-parser.add_argument('--val_every', type=int, default=10) # 只在这里出现了
-parser.add_argument('--syn_num', type=int, default=100, help='number features to generate per class')
-parser.add_argument('--lambda1', type=float, default=10, help='gradient penalty regularizer, following WGAN-GP')
-parser.add_argument('--outname', help='folder to output data and model checkpoints')
-
-# local using
-parser.add_argument('--classifier_lr', type=float, default=0.001, help='learning rate to train softmax classifier')
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--pretrain_classifier', default='', help="path to pretrain classifier (to continue training)")
 parser.add_argument('--outf', default='./checkpoint/', help='folder to output data and model checkpoints')
@@ -103,8 +104,7 @@ if opt.cuda:
     # sets the seed for generating random numbers on all GPUs
     torch.cuda.manual_seed_all(opt.manualSeed)
 
-
-cudnn.benchmark = True # it enables benchmark mode in cudnn benchmark mode is good whenever your input sizes for your network do not vary This way, cudnn will look for the optimal set of algorithms for that particular configuration this usually leads to faster runtime
+cudnn.benchmark = True
 
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
@@ -113,7 +113,7 @@ if torch.cuda.is_available() and not opt.cuda:
 
 # 按dataset参数值加载数据，默认为FLO
 data = util.DATA_LOADER(opt)
-print("# of training samples: ", data.ntrain) # ntrain是特征向量个数
+print("# of training samples: ", data.ntrain)
 
 ################################################################################
 
@@ -127,21 +127,24 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-# netR = model.MLP_R(opt)
-# netR = model.MLP_R_single(opt)
-netR = model.MLP_R_double(opt)
+# netR = model.MLP_1HL_Dropout_R(opt)
+netR = model.MLP_2HL_Dropout_R(opt)
+# netR = model.MLP_3HL_Dropout_R(opt)
+# netR = model.MLP_4HL_Dropout_R(opt)
 print(netR)
 
 ################################################################################
 
 # classification loss, Equation (4) of the paper
 cls_criterion = nn.NLLLoss() # Negative Log Likelihood loss
+# R_criterion = nn.CosineEmbeddingLoss()
 R_criterion = nn.PairwiseDistance()
 
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
 input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
 input_label = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
+
 one = torch.FloatTensor([1])
 mone = one * -1
 
@@ -154,6 +157,7 @@ if opt.cuda:
     one = one.cuda()
     mone = mone.cuda()
     cls_criterion.cuda()
+    R_criterion = R_criterion.cuda()
     input_label = input_label.cuda()
 
 ################################################################################
@@ -227,6 +231,7 @@ pretrain_cls = classifier.CLASSIFIER(data.train_feature, util.map_label(data.tra
 for p in pretrain_cls.model.parameters(): # set requires_grad to False
     p.requires_grad = False
 
+print('epoch lossG lossD lossR wDistance c_errG acc')
 for epoch in range(opt.nepoch):
 
     # FP = 0
@@ -302,8 +307,13 @@ for epoch in range(opt.nepoch):
 
         syn_att = netR(fake)
 
-        R_cost = R_criterion(syn_att, input_attv)
-        errR = R_cost.mean()
+        # # 计算cosine损失之前对数据进行归一化
+        # syn_att = tfunc.normalize(syn_att)
+        # true_att = tfunc.normalize(input_attv)
+
+        errR = R_criterion(syn_att, input_attv)
+        errR = errR.mean()
+
         errR.backward(retain_graph=True)
         optimizerR.step()
 
@@ -313,9 +323,6 @@ for epoch in range(opt.nepoch):
 
     # mean_lossD /=  data.ntrain / opt.batch_size
     # mean_lossG /=  data.ntrain / opt.batch_size
-
-    # print('[%d/%d] Loss_D:%.4f Loss_G:%.4f Wasserstein_dist:%.4f c_errG:%.4f' % (epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], c_errG.data[0]))
-    # print('%d %.4f %.4f %.4f %.4f' % (epoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], c_errG.data[0]))
 
     # print('[%d/%d] Loss_D:%.4f Loss_G:%.4f Loss_R:%.4f Wasserstein_dist:%.4f c_errG:%.4f' % (epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], c_errG.data[0]))
     print('%d %.4f %.4f %.4f %.4f %.4f' % (epoch, D_cost.data[0], G_cost.data[0], errR.data[0], Wasserstein_D.data[0], c_errG.data[0]))

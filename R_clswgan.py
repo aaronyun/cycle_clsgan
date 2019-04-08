@@ -41,6 +41,7 @@ parser.add_argument('--standardization', action='store_true', default=False)
 # network specification
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
+parser.add_argument('--r_hl', default=1, help="the number of hidden layers in R net")
 parser.add_argument('--netG_name', default='')
 parser.add_argument('--netD_name', default='')
 parser.add_argument('--ndh', type=int, default=1024, help='size of the hidden units in discriminator')
@@ -63,6 +64,7 @@ parser.add_argument('--r_weight', type=float, default=1, help='weight of the att
 # experiment setting
 parser.add_argument('--gzsl', action='store_true', default=False, help='enable generalized zero-shot learning')
 parser.add_argument('--critic_iter', type=int, default=5, help='critic iteration, following WGAN-GP')
+parser.add_argument('--r_iteration', type=int, default=3, help='the pretraining time of R net')
 parser.add_argument('--syn_num', type=int, default=100, help='number features to generate per class')
 parser.add_argument('--classifier_lr', type=float, default=0.001, help='learning rate to train softmax classifier')
 
@@ -111,7 +113,7 @@ if torch.cuda.is_available() and not opt.cuda:
 
 ################################################################################
 
-# 按dataset参数值加载数据，默认为FLO
+# 按opt.dataset参数值加载数据，默认为FLO
 data = util.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
@@ -127,18 +129,24 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-# netR = model.MLP_1HL_Dropout_R(opt)
-netR = model.MLP_2HL_Dropout_R(opt)
-# netR = model.MLP_3HL_Dropout_R(opt)
-# netR = model.MLP_4HL_Dropout_R(opt)
+if opt.r_hl == 1:
+    netR = model.MLP_1HL_Dropout_R(opt)
+elif opt.r_hl == 2:
+    netR = model.MLP_2HL_Dropout_R(opt)
+elif opt.r_hl == 3:
+    netR = model.MLP_3HL_Dropout_R(opt)
+elif opt.r_hl == 4:
+    netR = model.MLP_4HL_Dropout_R(opt)
+else:
+    print('There is no dataset called:' + opt.dataset)
 print(netR)
 
 ################################################################################
 
 # classification loss, Equation (4) of the paper
 cls_criterion = nn.NLLLoss() # Negative Log Likelihood loss
-# R_criterion = nn.CosineEmbeddingLoss()
-R_criterion = nn.PairwiseDistance()
+# r_criterion = nn.CosineEmbeddingLoss()
+r_criterion = nn.PairwiseDistance()
 
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
 input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
@@ -157,7 +165,7 @@ if opt.cuda:
     one = one.cuda()
     mone = mone.cuda()
     cls_criterion.cuda()
-    R_criterion = R_criterion.cuda()
+    r_criterion = r_criterion.cuda()
     input_label = input_label.cuda()
 
 ################################################################################
@@ -233,29 +241,38 @@ for p in pretrain_cls.model.parameters(): # set requires_grad to False
 
 print('epoch lossG lossD lossR wDistance c_errG acc')
 for epoch in range(opt.nepoch):
-
-    # FP = 0
-
-    # mean_lossD = 0
-    # mean_lossG = 0
-
     for i in range(0, data.ntrain, opt.batch_size):
+        sample()
+        input_resv = Variable(input_res)
+        input_attv = Variable(input_att)
+
+        # --------------------------------------------
+        # 对R网络进行预训练
+        # --------------------------------------------
+        # for rp in netR.parameters():
+        #     rp.requires_grad = True
+        
+        # for iter_r in range(opt.r_iteration):
+        #     pretrain_att = netR(input_resv)
+
+        #     pretrain_r_loss = r_criterion(pretrain_att, input_attv)
+        #     pretrain_r_loss = pretrain_r_loss.mean()
+        #     pretrain_r_loss.backward()
+
+        #     pretrain_r_loss.step()
+
         # --------------------------------------------
         # 训练D网络，等式（2）
         # --------------------------------------------
-        for p in netD.parameters(): # reset requires_grad
+        for p in netD.parameters():
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
-            sample()
 
             netD.zero_grad()
 
             # 用真实数据训练D
             # sparse_real = opt.resSize - input_res[1].gt(0).sum()
-            input_resv = Variable(input_res)
-            input_attv = Variable(input_att)
-
             criticD_real = netD(input_resv, input_attv)
             criticD_real = criticD_real.mean()
             criticD_real.backward(mone)
@@ -311,7 +328,7 @@ for epoch in range(opt.nepoch):
         # syn_att = tfunc.normalize(syn_att)
         # true_att = tfunc.normalize(input_attv)
 
-        errR = R_criterion(syn_att, input_attv)
+        errR = r_criterion(syn_att, input_attv)
         errR = errR.mean()
 
         errR.backward(retain_graph=True)

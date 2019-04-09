@@ -41,7 +41,7 @@ parser.add_argument('--standardization', action='store_true', default=False)
 # network specification
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
-parser.add_argument('--r_hl', default=1, help="the number of hidden layers in R net")
+parser.add_argument('--r_hl', type=int, default=1, help="the number of hidden layers in R net")
 parser.add_argument('--netG_name', default='')
 parser.add_argument('--netD_name', default='')
 parser.add_argument('--ndh', type=int, default=1024, help='size of the hidden units in discriminator')
@@ -129,6 +129,7 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
+print(opt.r_hl)
 if opt.r_hl == 1:
     netR = model.MLP_1HL_Dropout_R(opt)
 elif opt.r_hl == 2:
@@ -138,7 +139,7 @@ elif opt.r_hl == 3:
 elif opt.r_hl == 4:
     netR = model.MLP_4HL_Dropout_R(opt)
 else:
-    print('There is no dataset called:' + opt.dataset)
+    print('There is an error about opt.r_hl')
 print(netR)
 
 ################################################################################

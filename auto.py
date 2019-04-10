@@ -28,8 +28,7 @@ for data_set in data_sets:
 
             # 用子进程跑对应的代码，并把输出写入到指定文件
             with open(exp_file_path + '/result/' + os.path.splitext(file)[0] + '.txt', 'w') as f:
-                # print(args_in_file)
-                subprocess.Popen(args_in_file, stdout=f)
+                subprocess.run(args_in_file, stdout=f)
                 print('----------')
                 print('%s Done!' % file_path)
                 print('----------')

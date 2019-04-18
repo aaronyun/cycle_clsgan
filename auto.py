@@ -2,12 +2,13 @@ import os
 import shlex
 import subprocess
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 exp_set = '/zsl'
 # exp_set = '/gzsl'
 
-exp_type = '/r_net'
+# exp_type = '/r_pretrain'
+exp_type = '/r_pre_d'
 data_sets = ['/cub', '/flo', '/sun', '/awa']
 
 for data_set in data_sets:

@@ -41,7 +41,7 @@ parser.add_argument('--standardization', action='store_true', default=False)
 # network specification
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
-parser.add_argument('--r_path', default='/home/docker/xingyun/cycle_clsgan/r_param/', help='path to load parameters of R')
+parser.add_argument('--r_path', default='/home/xingyun/docker/cycle_clsgan/r_param/', help='path to load parameters of R')
 # parser.add_argument('--r_hl', type=int, default=1, help="the number of hidden layers in R net")
 parser.add_argument('--netG_name', default='')
 parser.add_argument('--netD_name', default='')
@@ -150,8 +150,8 @@ print(netR)
 
 # classification loss, Equation (4) of the paper
 cls_criterion = nn.NLLLoss() # Negative Log Likelihood loss
-# r_criterion = nn.CosineEmbeddingLoss()
-r_criterion = nn.PairwiseDistance()
+r_criterion = nn.CosineSimilarity()
+# r_criterion = nn.PairwiseDistance()
 
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
 input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
@@ -321,10 +321,10 @@ for epoch in range(opt.nepoch):
         errR = r_criterion(syn_att, input_attv)
         errR = errR.mean()
 
-        errR.backward(retain_graph=True)
+        errR.backward(mone, retain_graph=True)
         optimizerR.step()
 
-        errG = G_cost + opt.cls_weight * c_errG + opt.r_weight * errR
+        errG = G_cost + opt.cls_weight * c_errG - opt.r_weight * errR
         errG.backward()
         optimizerG.step()
 

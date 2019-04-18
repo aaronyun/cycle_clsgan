@@ -1,0 +1,1 @@
+python3 ./r_pretrain.py --cuda --preprocessing --lr 0.0001 --image_embedding res101 --class_embedding att --batch_size 64 --resSize 2048 --nrh 4096 --nrh1 1024 --nrh2 512 --nrh3 312 --nrh4 156 --drop_rate 0.2 --attSize 312 --dataset CUB1

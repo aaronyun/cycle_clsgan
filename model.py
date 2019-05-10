@@ -1,10 +1,10 @@
-#!/usr/bin/python3.5
+#!/usr/bin/python3.6
 
 import torch.nn as nn
 import torch
 
 def weights_init(m):
-    classname = m.__class__.__name__ #! m究竟是什么
+    classname = m.__class__.__name__
     # find()寻找子字符串的位置，返回最小的下标，返回-1表示不存在
     if classname.find('Linear') != -1:
         m.weight.data.normal_(0.0, 0.02)
@@ -392,5 +392,23 @@ class MLP_4HL_Dropout_R(nn.Module):
         h = self.lrelu(self.fc4(h))
         h = self.dropout(h)
         h = self.relu(self.fc5(h))
+
+        return h
+
+class MLP_Metric(nn.Module):
+    def __init__(self, opt):
+        super(MLP_Metric).__init__()
+        self.fc1 = nn.Linear(opt.attSize, opt.nmh)
+        self.fc2 = nn.Linear(opt.nmh, 1)
+        self.relu = nn.ReLU(True)
+        self.sigmoid = nn.Sigmoid()
+
+        self.apply(weights_init)
+
+    def forward(self, att):
+        h = self.fc1(att)
+        h = self.relu(h)
+        h = self.fc2(h)
+        h = self.sigmoid(h)
 
         return h

@@ -124,6 +124,7 @@ class LINEAR_LOGSOFTMAX(nn.Module):
         super(LINEAR_LOGSOFTMAX, self).__init__()
         self.fc = nn.Linear(input_dim, nclass)
         self.logic = nn.LogSoftmax(dim=1)
+
     def forward(self, x): 
         o = self.logic(self.fc(x))
         return o  

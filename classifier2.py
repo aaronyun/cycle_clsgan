@@ -52,7 +52,7 @@ class CLASSIFIER:
         self.ntrain = self.train_X.size()[0]
 
         if generalized:
-            self.acc_seen, self.acc_unseen, self.H = self.fit()
+            self.acc_seen, self.acc_unseen, self.H = self.fit_gzsl()
             #print('Final: acc_seen=%.4f, acc_unseen=%.4f, h=%.4f' % (self.acc_seen, self.acc_unseen, self.H))
         else:
             self.acc = self.fit_zsl()
@@ -69,6 +69,7 @@ class CLASSIFIER:
 
                 self.model.zero_grad()
 
+                # 用生成的视觉特征训练
                 batch_input, batch_label = self.next_batch(self.batch_size)
                 self.input.copy_(batch_input)
                 self.label.copy_(batch_label)
@@ -83,7 +84,7 @@ class CLASSIFIER:
 
                 # print('Training classifier loss= ', loss.data[0])
 
-            # 上面用生成的未知类别训练分类器，接下来用真实数据来评估分类器性能
+            # 用真实数据来评估分类器性能
             acc = self.val(self.test_unseen_feature, self.test_unseen_label, self.unseenclasses)
             #print('acc %.4f' % (acc))
             # 记录最优准确率
@@ -120,7 +121,7 @@ class CLASSIFIER:
         # print('acc_per_class: ', acc_per_class.tolist())
         return acc_per_class.mean()
 
-    def fit(self):
+    def fit_gzsl(self):
         best_H = 0
         best_seen = 0
         best_unseen = 0

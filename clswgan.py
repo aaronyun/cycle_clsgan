@@ -1,4 +1,4 @@
-#!/usr/bin/python3.5
+#!/usr/bin/python3.6
 
 from __future__ import print_function
 import sys
@@ -293,7 +293,7 @@ for epoch in range(opt.nepoch):
     # evaluate the model, set G to evaluation mode
     netG.eval()
 
-    if opt.gzsl: # GZSL，使用简单的多分类网络来做最后的类别判断
+    if opt.gzsl:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
 
         train_X = torch.cat((data.train_feature, syn_feature), 0)
@@ -303,13 +303,12 @@ for epoch in range(opt.nepoch):
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
         print('unseen=%.4f, seen=%.4f, h=%.4f' % (cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
-    else: # ZSL，使用简单的多分类网络来做最后的类别判断
+    else:
         # data.unseenclasses取自test_unseen_label
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
 
         cls_ = classifier2.CLASSIFIER(_train_X=syn_feature, _train_Y=util.map_label(syn_label, data.unseenclasses), data_loader=data, _nclass=data.unseenclasses.size(0), _cuda=opt.cuda, _lr=opt.classifier_lr, _beta1=0.5, _nepoch=25, _batch_size=opt.syn_num, generalized=False)
         acc = cls_.acc
-        # print('unseen class accuracy= ', float(acc))
         print('unseen class accuracy= ', acc)
 
     # reset G to training mode

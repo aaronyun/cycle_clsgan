@@ -104,6 +104,7 @@ class DATA_LOADER(object):
         # cross validation, 默认为False
         if not opt.validation:
             # MinMaxScaler on visual features
+            # opt.preprocessing 默认为False
             if opt.preprocessing:
                 if opt.standardization:
                     print('standardization...')

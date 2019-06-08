@@ -7,6 +7,11 @@ import torch
 from sklearn import preprocessing
 import sys
 
+def get_rc_att(all_att, syn_att):
+    true_all_att = data.attribute
+    
+    return rc_att
+
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Linear') != -1:

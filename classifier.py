@@ -1,5 +1,3 @@
-#!/usr/bin/python3.5
-
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -45,6 +43,7 @@ class CLASSIFIER:
             self.fit()
         else:
             self.model.load_state_dict(torch.load(pretrain_classifier))
+    
 
     def fit(self):
         for epoch in range(self.nepoch):
@@ -53,38 +52,14 @@ class CLASSIFIER:
                 batch_input, batch_label = self.next_batch(self.batch_size) 
                 self.input.copy_(batch_input)
                 self.label.copy_(batch_label)
-
+                   
                 inputv = Variable(self.input)
                 labelv = Variable(self.label)
                 output = self.model(inputv)
                 loss = self.criterion(output, labelv)
                 loss.backward()
                 self.optimizer.step()
-
-    # test_label is integer 
-    def val(self, test_X, test_label, target_classes): 
-        start = 0
-        ntest = test_X.size()[0]
-        predicted_label = torch.LongTensor(test_label.size())
-        for i in range(0, ntest, self.batch_size):
-            end = min(ntest, start+self.batch_size)
-            if self.cuda:
-                output = self.model(Variable(test_X[start:end].cuda(), requires_grad=False)) 
-            else:
-                output = self.model(Variable(test_X[start:end], requires_grad=False)) 
-            _, predicted_label[start:end] = torch.max(output.data, 1)
-            start = end
-
-        acc = self.compute_per_class_acc(util.map_label(test_label, target_classes), predicted_label, target_classes.size(0))
-        return acc
-
-    def compute_per_class_acc(self, test_label, predicted_label, nclass):
-        acc_per_class = torch.FloatTensor(nclass).fill_(0)
-        for i in range(nclass):
-            idx = (test_label == i)
-            acc_per_class[i] = torch.sum(test_label[idx]==predicted_label[idx]) / torch.sum(idx)
-        return acc_per_class.mean()
-
+                     
     def next_batch(self, batch_size):
         start = self.index_in_epoch
         # shuffle the data at the first epoch
@@ -119,12 +94,35 @@ class CLASSIFIER:
             # from index start to index end-1
             return self.train_X[start:end], self.train_Y[start:end]
 
+    # test_label is integer 
+    def val(self, test_X, test_label, target_classes): 
+        start = 0
+        ntest = test_X.size()[0]
+        predicted_label = torch.LongTensor(test_label.size())
+        for i in range(0, ntest, self.batch_size):
+            end = min(ntest, start+self.batch_size)
+            if self.cuda:
+                output = self.model(Variable(test_X[start:end].cuda(), volatile=True)) 
+            else:
+                output = self.model(Variable(test_X[start:end], volatile=True)) 
+            _, predicted_label[start:end] = torch.max(output.data, 1)
+            start = end
+
+        acc = self.compute_per_class_acc(util.map_label(test_label, target_classes), predicted_label, target_classes.size(0))
+        return acc
+
+    def compute_per_class_acc(self, test_label, predicted_label, nclass):
+        acc_per_class = torch.FloatTensor(nclass).fill_(0)
+        for i in range(nclass):
+            idx = (test_label == i)
+            acc_per_class[i] = torch.sum(test_label[idx]==predicted_label[idx]) / torch.sum(idx)
+        return acc_per_class.mean() 
+
 class LINEAR_LOGSOFTMAX(nn.Module):
     def __init__(self, input_dim, nclass):
         super(LINEAR_LOGSOFTMAX, self).__init__()
         self.fc = nn.Linear(input_dim, nclass)
         self.logic = nn.LogSoftmax(dim=1)
-
     def forward(self, x): 
         o = self.logic(self.fc(x))
         return o  

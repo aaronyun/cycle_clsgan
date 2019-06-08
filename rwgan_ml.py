@@ -180,7 +180,6 @@ if opt.cuda:
 
 def sample():
     batch_feature, batch_label, batch_att = data.next_batch(opt.batch_size)
-    # self.copy_(src)将src复制到self里
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
     input_label.copy_(util.map_label(batch_label, data.seenclasses))
@@ -304,30 +303,29 @@ for epoch in range(opt.nepoch):
         # -----------------------
         netR.zero_grad()
 
-        syn_att = netR(fake)
-        # -----------------------
-        # 对W网络进行同步训练
-        # -----------------------
-        true_all_att = data.attribute
-        true_batch_att = input_att
+        syn_att = netR(fake) # shape of syn_att: (batch_size, att_size)
 
-        syn_att_ndarray = syn_att.numpy()
-        repeat_syn_att = syn_att_ndarray.repeat((true_all_att.size(0),), axis=0)
-        repeat_true_all_att = np.tile(true_all_att, (opt.batch_size,1))
+        # true_all_att = data.attribute
+        # true_batch_att = input_att
 
-        # 单纯的各类别与生成的属性向量相减做为损失，但是直接相减的话包含了同类别的情况
-        att_reduction = repeat_syn_att-repeat_true_all_att
-        mean_att_reduction = np.mean(att_reduction, axis=1)
+        # syn_att_ndarray = syn_att.numpy()
+        # repeat_syn_att = syn_att_ndarray.repeat((true_all_att.size(0),), axis=0)
+        # repeat_true_all_att = np.tile(true_all_att, (opt.batch_size,1))
 
+        dif_concate_att = util.get_dif_concate_att(syn_att)
+
+        errM = netM()
+        errM = errM.mean()
+        errM.backward(mone)
+        optimizerM.step()
+
+        # 总的R网络的损失等于生成的属性向量与同类别的属性向量之间的差距，减去与不同类属性向量之间的差距
+        errR.backward(one)
         optimizerR.step()
 
         errG = G_cost  - opt.r_weight * errR
         errG.backward()
         optimizerG.step()
-
-    # mean_lossD /=  data.ntrain / opt.batch_size
-    # mean_lossG /=  data.ntrain / opt.batch_size
-
 
     print('%d %.4f %.4f %.4f %.4f' % (epoch, D_cost.data[0], G_cost.data[0], errR.data[0], Wasserstein_D.data[0]))
 

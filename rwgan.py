@@ -25,7 +25,7 @@ import model
 parser = argparse.ArgumentParser()
 
 # data specification
-parser.add_argument('--dataroot', default='/data0/docker/xingyun/f_xGAN/data', help='path to dataset')
+parser.add_argument('--dataroot', default='/data0/docker/xingyun/mmcgan/data', help='path to dataset')
 parser.add_argument('--dataset', default='FLO', help='FLO')
 parser.add_argument('--matdataset', default=True, help='Data in matlab format')
 parser.add_argument('--image_embedding', default='res101')
@@ -92,7 +92,6 @@ print(opt)
 ################################################################################
 
 try:
-    # checkpoint本来是用来保存网络的，但是这份代码并没有保存
     os.makedirs(opt.outf)
 except OSError:
     pass
@@ -101,9 +100,8 @@ if opt.manualSeed is None:
     opt.manualSeed = random.randint(1, 10000)
 print("Random Seed: ", opt.manualSeed)
 
-random.seed(opt.manualSeed) # initialize internal state
-
-torch.manual_seed(opt.manualSeed) # sets the seed for generating random numbers
+random.seed(opt.manualSeed)
+torch.manual_seed(opt.manualSeed)
 if opt.cuda:
     print('cuda is on, sets the seed for generating random numbers on all GPU')
     torch.cuda.manual_seed_all(opt.manualSeed)
@@ -115,7 +113,7 @@ if torch.cuda.is_available() and not opt.cuda:
 
 ################################################################################
 
-data = util.DATA_LOADER(opt) # 默认加载FLO
+data = util.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
 ################################################################################
@@ -142,6 +140,10 @@ elif opt.dataset == 'SUN1':
 elif opt.dataset == 'AWA1':
     netR = model.MLP_4HL_Dropout_R(opt)
     # netR.load_state_dict(torch.load(opt.r_path + 'AWA1.pth'))
+elif opt.dataset == 'APY':
+    netR = model.MLP_2HL_Dropout_R(opt)
+elif opt.dataset == 'AWA2':
+    netR = model.MLP_2HL_Dropout_R(opt)
 else:
     print('There is no dataset called %s' % opt.dataset)
 print(netR)
@@ -293,6 +295,7 @@ for epoch in range(opt.nepoch):
         criticG_fake = criticG_fake.mean()
         G_cost = -criticG_fake
 
+        # -----------------------
         # 对R网络进行与G同步的训练
         # -----------------------
         netR.zero_grad()
@@ -312,13 +315,11 @@ for epoch in range(opt.nepoch):
     # mean_lossD /=  data.ntrain / opt.batch_size
     # mean_lossG /=  data.ntrain / opt.batch_size
 
-
     print('%d %.4f %.4f %.4f %.4f' % (epoch, D_cost.data[0], G_cost.data[0], errR.data[0], Wasserstein_D.data[0]))
 
-    # evaluate the model, set G to evaluation mode
     netG.eval()
 
-    if opt.gzsl: # GZSL，使用简单的多分类网络来做最后的类别判断
+    if opt.gzsl:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
 
         train_X = torch.cat((data.train_feature, syn_feature), 0)
@@ -327,12 +328,11 @@ for epoch in range(opt.nepoch):
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
         print('unseen_class_acc=%.4f, seen_class_acc=%.4f, h=%.4f' % (cls_.acc_unseen, cls_.acc_seen, cls_.H))
-    else: # ZSL，使用简单的多分类网络来做最后的类别判断
+    else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
 
         cls_ = classifier2.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
         print('unseen_class_acc= ', acc)
 
-    # reset G to training mode
     netG.train()

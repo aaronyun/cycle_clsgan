@@ -2,14 +2,14 @@ import os
 import shlex
 import subprocess
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
-exp_set = '/zsl'
-# exp_set = '/gzsl'
+# exp_set = '/zsl'
+exp_set = '/gzsl'
 
-exp_types = ['/rwgan_tune_batch']
+exp_types = ['/new_datasets']
 
-data_sets = ['/cub', '/flo', '/sun', '/awa']
+data_sets = ['/awa2','/apy']
 
 for exp_type in exp_types:
     for data_set in data_sets:
@@ -34,6 +34,7 @@ for exp_type in exp_types:
                     print('%s #Begin!#' % file_path)
                     print('----------')
                     subprocess.run(args_in_file, stdout=f)
+                    # subprocess.run(args_in_file)
                     print('----------')
                     print('%s #Done!#' % file_path)
                     print('----------')

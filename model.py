@@ -398,7 +398,8 @@ class MLP_4HL_Dropout_R(nn.Module):
 class MLP_Metric(nn.Module):
     def __init__(self, opt):
         super(MLP_Metric).__init__()
-        self.fc1 = nn.Linear(opt.attSize, opt.nmh)
+        self.fc1 = nn.Linear(opt.attSize*2, opt.attSize)
+        self.fc3 = nn.Linear(opt.attSize, opt.nmh)
         self.fc2 = nn.Linear(opt.nmh, 1)
         self.relu = nn.ReLU(True)
         self.sigmoid = nn.Sigmoid()
@@ -407,6 +408,8 @@ class MLP_Metric(nn.Module):
 
     def forward(self, att):
         h = self.fc1(att)
+        h = self.relu(h)
+        h = self.fc3(h)
         h = self.relu(h)
         h = self.fc2(h)
         h = self.sigmoid(h)

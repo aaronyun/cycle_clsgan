@@ -23,6 +23,15 @@
 
 ## CUB
 
+- att_splits.mat ['att', 'test_seen_loc', 'test_unseen_loc', 'train_loc', 'trainval_loc', 'val_loc']
+
 ## SUN
 
 ## AWA1
+
+30475 images from 50 different types of animals with attribute annotations
+
+- att_splits.mat ['att', 'test_seen_loc', 'test_unseen_loc', 'train_loc', 'trainval_loc', 'val_loc']
+   1. att: (1024, 85)
+
+total images: 30475  train_val + test_seen + test_unseen

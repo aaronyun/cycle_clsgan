@@ -90,10 +90,10 @@ class DATA_LOADER(object):
         self.ntest_class = self.unseenclasses.size(0)
 
     def read_matdataset(self, opt):
-        matcontent = sio.loadmat(opt.dataroot + "/" + opt.dataset + "/" + opt.image_embedding + ".mat") # image_embedding默认为res101
+        matcontent = sio.loadmat(opt.dataroot + "/" + opt.dataset + "/" + opt.image_embedding + ".mat")
 
-        feature = matcontent['features'].T # 转置后的形状(num of examples, dim)
-        label = matcontent['labels'].astype(int).squeeze() - 1 # squeeze()去掉为1的维度得到(8189,)
+        feature = matcontent['features'].T # 转置后的形状(num of examples, feature dim)
+        label = matcontent['labels'].astype(int).squeeze() - 1 # 维度(8189,1)squeeze()去掉为1的维度得到(8189,)
 
         matcontent = sio.loadmat(opt.dataroot + "/" + opt.dataset + "/" + opt.class_embedding + "_splits.mat")
 
@@ -106,11 +106,9 @@ class DATA_LOADER(object):
 
         self.attribute = torch.from_numpy(matcontent['att'].T).float()
 
-        # cross validation, 默认为False
-        if not opt.validation:
+        if not opt.validation: # 若不进行交叉验证
             # MinMaxScaler on visual features
-            # opt.preprocessing 默认为False
-            if opt.preprocessing:
+            if opt.preprocessing: # 不进行交叉验证，但是进行预处理
                 if opt.standardization:
                     print('standardization...')
                     scaler = preprocessing.StandardScaler()
@@ -124,25 +122,31 @@ class DATA_LOADER(object):
                 mx = self.train_feature.max()
                 self.train_feature.mul_(1/mx)
                 self.train_label = torch.from_numpy(label[trainval_loc]).long() 
+                # self.train_att = torch.from_numpy(attribute[trainval_loc])
+
                 self.test_unseen_feature = torch.from_numpy(_test_unseen_feature).float()
                 self.test_unseen_feature.mul_(1/mx)
-                self.test_unseen_label = torch.from_numpy(label[test_unseen_loc]).long() 
+                self.test_unseen_label = torch.from_numpy(label[test_unseen_loc]).long()
                 self.test_seen_feature = torch.from_numpy(_test_seen_feature).float() 
                 self.test_seen_feature.mul_(1/mx)
                 self.test_seen_label = torch.from_numpy(label[test_seen_loc]).long()
-            else:
-                # 注意用的是trainval_loc
+            else: # 不进行交叉验证，也不进行预处理
                 self.train_feature = torch.from_numpy(feature[trainval_loc]).float()
-                self.train_label = torch.from_numpy(label[trainval_loc]).long() 
+                self.train_label = torch.from_numpy(label[trainval_loc]).long()
+                # self.train_att = torch.from_numpy(attribute[trainval_loc])
 
                 self.test_unseen_feature = torch.from_numpy(feature[test_unseen_loc]).float()
-                self.test_unseen_label = torch.from_numpy(label[test_unseen_loc]).long() 
+                self.test_unseen_label = torch.from_numpy(label[test_unseen_loc]).long()
+                self.test_unseen_att = torch.from_numpy(self.attribute[test_unseen_loc])
 
                 self.test_seen_feature = torch.from_numpy(feature[test_seen_loc]).float() 
                 self.test_seen_label = torch.from_numpy(label[test_seen_loc]).long()
+                self.test_seen_att = torch.from_numpy(self.attribute[test_seen_loc])
         else:
             self.train_feature = torch.from_numpy(feature[train_loc]).float()
             self.train_label = torch.from_numpy(label[train_loc]).long()
+            # self.train_att = torch.from_numpy(attribute[trainval_loc])
+
             self.test_unseen_feature = torch.from_numpy(feature[val_unseen_loc]).float()
             self.test_unseen_label = torch.from_numpy(label[val_unseen_loc]).long()
 

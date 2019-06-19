@@ -1,1 +1,0 @@
-python3 ./wgan.py --manualSeed 806 --preprocessing --val_every 1 --cuda --image_embedding res101 --class_embedding att --netG_name MLP_G --netD_name MLP_CRITIC --nepoch 500 --ngh 4096 --ndh 4096 --lambda1 10 --critic_iter 5 --dataset FLO --batch_size 1024 --nz 1024 --attSize 1024 --resSize 2048 --lr 0.0001 --outname flowers --bc True --syn_num 300

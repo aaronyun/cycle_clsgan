@@ -43,7 +43,7 @@ for data_set in data_sets:
                 print('----------')
                 print('%s #Begin!#' % file_path)
                 print('----------')
-                subprocess.run(args_in_file, stdout=f)
+                subprocess.run(args_in_file stdout=f)
                 # subprocess.run(args_in_file)
                 print('----------')
                 print('%s #Done!#' % file_path)

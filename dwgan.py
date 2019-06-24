@@ -1,6 +1,5 @@
 #!/usr/bin/python3.6
 
-from __future__ import print_function
 import sys
 import os
 import math
@@ -13,7 +12,6 @@ import torch.nn.functional as tfunc
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
-from torch.autograd import Variable
 
 from utilities import mix, opts, util
 from utilities import classifier, classifier2, mlp

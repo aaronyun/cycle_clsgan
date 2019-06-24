@@ -1,8 +1,7 @@
 #!/usr/bin/python3.6
 
-from __future__ import print_function
-import sys
 import os
+import sys
 import math
 import argparse
 import random
@@ -13,7 +12,6 @@ import torch.nn.functional as tfunc
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
-from torch.autograd import Variable
 
 from utilities import mix, opts, util
 from utilities import classifier, classifier2, mlp
@@ -76,7 +74,7 @@ elif opt.dataset == 'APY':
 elif opt.dataset == 'AWA2':
     netR = mlp.MLP_2HL_Dropout_R(opt)
 else:
-    print('There is no dataset called %s' % opt.dataset)
+    raise('There is no data set called ', opt.dataset)
 print(netR)
 
 ################################################################################
@@ -97,14 +95,13 @@ if opt.cuda:
     netD.cuda()
     netG.cuda()
     netR.cuda()
-    input_res = input_res.cuda()
-    noise, input_att = noise.cuda(), input_att.cuda()
+
+    noise, input_res, input_att, input_label  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda()
+
     one = one.cuda()
     mone = mone.cuda()
-    r_criterion = r_criterion.cuda()
-    input_label = input_label.cuda()
 
-################################################################################
+    r_criterion = r_criterion.cuda()
 
 def sample():
     if opt.bc:
@@ -153,9 +150,9 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
     interpolates = alpha * real_data + ((1 - alpha) * fake_data)
     if opt.cuda:
         interpolates = interpolates.cuda()
-    interpolates = Variable(interpolates, requires_grad=True)
+    interpolates = interpolates.requires_grad
 
-    disc_interpolates = netD(interpolates, Variable(input_att))
+    disc_interpolates = netD(interpolates, input_att)
 
     ones = torch.ones(disc_interpolates.size())
     if opt.cuda:
@@ -167,8 +164,6 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 
     return gradient_penalty
 
-################################################################################
-
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -179,12 +174,9 @@ max_H = 0
 max_acc = 0
 corresponding_epoch = 0
 
-print('epoch lossG lossD lossR wDistance acc')
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
         sample() # get a batch of data
-        input_resv = Variable(input_res)
-        input_attv = Variable(input_att)
 
         # --------------------------------------------
         # 训练D网络，等式（2）
@@ -197,16 +189,15 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # 用真实数据训练D
-            criticD_real = netD(input_resv, input_attv)
+            criticD_real = netD(input_res, input_att)
             criticD_real = criticD_real.mean()
             criticD_real.backward(mone)
 
             # 用生成的数据训练D
             noise.normal_(0, 1)
-            noisev = Variable(noise)
-            fake = netG(noisev, input_attv)
+            fake = netG(noise, input_att)
 
-            criticD_fake = netD(fake.detach(), input_attv) # detach(), detached from the current graph
+            criticD_fake = netD(fake.detach(), input_att) # detach(), detached from the current graph
             criticD_fake = criticD_fake.mean()
             criticD_fake.backward(one)
 
@@ -227,12 +218,10 @@ for epoch in range(opt.nepoch):
 
         netG.zero_grad()
 
-        input_attv = Variable(input_att)
         noise.normal_(0, 1)
-        noisev = Variable(noise)
 
-        fake = netG(noisev, input_attv)
-        criticG_fake = netD(fake, input_attv)
+        fake = netG(noise, input_att)
+        criticG_fake = netD(fake, input_att)
 
         criticG_fake = criticG_fake.mean()
         G_cost = -criticG_fake
@@ -244,7 +233,7 @@ for epoch in range(opt.nepoch):
 
         syn_att = netR(fake)
 
-        errR = r_criterion(syn_att, input_attv)
+        errR = r_criterion(syn_att, input_att)
         errR = errR.mean()
 
         errR.backward(mone, retain_graph=True)

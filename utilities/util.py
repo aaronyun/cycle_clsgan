@@ -1,7 +1,8 @@
 #!/usr/bin/python3.5
 
-# import h5py
+import h5py
 import sys
+import random
 
 import torch
 import numpy as np
@@ -38,11 +39,6 @@ def zero_mean(mean, std):
         return (image - image_mean - mean[:, None, None]) / std[:, None, None]
 
     return f
-
-def get_rc_att(all_att, syn_att):
-    true_all_att = data.attribute
-    
-    return rc_att
 
 def weights_init(m):
     classname = m.__class__.__name__

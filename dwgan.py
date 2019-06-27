@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/python3.7
 
 import sys
 import os
@@ -38,7 +38,7 @@ if torch.cuda.is_available() and not opt.cuda:
 # load datasets and datamixer
 data = util.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
-data_mixer = mix.DataMixer(data, opt) #! 需要修改datamixer的内容
+data_mixer = mix.DataMixer(data, opt)
 
 # initialize neural nets
 netG = mlp.MLP_G(opt)
@@ -101,7 +101,7 @@ def generate_syn_feature(netG, classes, attribute, num):
         # syn_att.copy_(iclass_att.repeat(num, 1))
 
         syn_noise.normal_(0, 1)
-        output = netG(Variable(syn_noise, requires_grad=False), Variable(syn_att, requires_grad=False))
+        output = netG(syn_noise, syn_att)
         syn_feature.narrow(0, i*num, num).copy_(output.data.cpu())
         syn_label.narrow(0, i*num, num).fill_(iclass)
 
@@ -118,7 +118,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
     interpolates = alpha * real_data + ((1 - alpha) * fake_data)
     if opt.cuda:
         interpolates = interpolates.cuda()
-    interpolates = Variable(interpolates, requires_grad=True)
+    interpolates = interpolates
 
     disc_interpolates = netD(interpolates, input_att)
 
@@ -146,10 +146,8 @@ corresponding_epoch = 0
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
         sample()
-        input_resv = Variable(input_res)
-        input_attv = Variable(input_att)
 
-        # DISCRIMINATOR TRAINING
+        # ORIGINAL DISCRIMINATOR TRAINING
         for p in netD.parameters():
             p.requires_grad = True # they are set to False below in netG update
 
@@ -157,22 +155,23 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # train D with real data
-            criticD_real = netD(input_resv, input_attv)
+            criticD_real = netD(input_res, input_att) # output Tensor
             criticD_real = criticD_real.mean()
-            criticD_real.backward(mone, retain_graph=True)
+            # we need criticD_real to be larger, so use mone
+            criticD_real.backward(mone)
 
             # train D with generated data
             noise.normal_(0, 1)
-            noisev = Variable(noise)
-            fake = netG(noisev, input_attv)
+            fake = netG(noise, input_att)
 
-            criticD_fake = netD(fake.detach(), input_attv) # detach(), detached from the current graph
+            criticD_fake = netD(fake.detach(), input_att) # detach(), detached from the current graph
             criticD_fake = criticD_fake.mean()
-            criticD_fake.backward(one, retain_graph=True)
+            # we need criticD_fake to be smaller, so use one
+            criticD_fake.backward(one)
 
             # gradient penalty
-            gradient_penalty = calc_gradient_penalty(netD, input_res, fake.data, input_attv)
-            gradient_penalty.backward(retain_graph=True)
+            gradient_penalty = calc_gradient_penalty(netD, input_res, fake.data,  input_att)
+            gradient_penalty.backward()
 
             Wasserstein_D = criticD_real - criticD_fake
 
@@ -185,12 +184,10 @@ for epoch in range(opt.nepoch):
 
         netG.zero_grad()
 
-        input_attv = Variable(input_att)
         noise.normal_(0, 1)
-        noisev = Variable(noise)
 
-        fake = netG(noisev, input_attv)
-        criticG_fake = netD(fake, input_attv)
+        fake = netG(noise, input_att)
+        criticG_fake = netD(fake, input_att)
 
         criticG_fake = criticG_fake.mean()
         G_cost = -criticG_fake
@@ -206,7 +203,7 @@ for epoch in range(opt.nepoch):
             reverseD.zero_grad()
 
             # train reverseD with real data
-            reverseD_real = reverseD(reverse_feature, input_attv)
+            reverseD_real = reverseD(reverse_feature, input_att)
             reverseD_real = reverseD_real.mean()
             reverseD_real.backward(mone, retain_graph=True)
 

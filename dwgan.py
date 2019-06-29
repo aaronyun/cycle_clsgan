@@ -38,7 +38,7 @@ if torch.cuda.is_available() and not opt.cuda:
 # load datasets and datamixer
 data = util.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
-data_mixer = mix.DataMixer(data, opt)
+# data_mixer = mix.DataMixer(data, opt)
 
 # initialize neural nets
 netG = mlp.MLP_G(opt)
@@ -58,6 +58,7 @@ input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
 input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
 input_label = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
+reverse_feature = torch.FloatTensor(opt.batch_size, opt.resSize)
 
 one = torch.FloatTensor([1])
 mone = one * -1
@@ -95,13 +96,13 @@ def generate_syn_feature(netG, classes, attribute, num):
         iclass = classes[i]
         iclass_att = attribute[iclass]
 
-        temp = iclass_att.clone()
-        temp = temp.repeat(num, 1)
-        syn_att.copy_(temp)
-        # syn_att.copy_(iclass_att.repeat(num, 1))
+        # temp = iclass_att.clone()
+        # temp = temp.repeat(num, 1)
+        # syn_att.copy_(temp)
+        syn_att.copy_(iclass_att.repeat(num, 1))
 
         syn_noise.normal_(0, 1)
-        output = netG(syn_noise, syn_att)
+        output = netG(syn_noise.requires_grad_(False), syn_att.requires_grad_(False))
         syn_feature.narrow(0, i*num, num).copy_(output.data.cpu())
         syn_label.narrow(0, i*num, num).fill_(iclass)
 
@@ -118,7 +119,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
     interpolates = alpha * real_data + ((1 - alpha) * fake_data)
     if opt.cuda:
         interpolates = interpolates.cuda()
-    interpolates = interpolates
+    interpolates = interpolates.requires_grad_(requires_grad=True)
 
     disc_interpolates = netD(interpolates, input_att)
 
@@ -145,13 +146,12 @@ corresponding_epoch = 0
 
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
-        sample()
-
         # ORIGINAL DISCRIMINATOR TRAINING
         for p in netD.parameters():
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
+            sample()
             netD.zero_grad()
 
             # train D with real data
@@ -185,38 +185,43 @@ for epoch in range(opt.nepoch):
         netG.zero_grad()
 
         noise.normal_(0, 1)
-
         fake = netG(noise, input_att)
-        criticG_fake = netD(fake, input_att)
 
+        criticG_fake = netD(fake, input_att)
         criticG_fake = criticG_fake.mean()
         G_cost = -criticG_fake
 
         ################################
         # REVERSE DISCRIMINATOR TRAINING
         ################################
-        reverse_feature = fake
         for p in reverseD.parameters():
             p.requires_grad = True # set to False when train reversG
 
         for iter_reverse_d in range(opt.reverse_iter):
+            # the groundtruth of reverse net are generated
+            sample()
+            noise.normal_(0, 1)
+            reverse_feature = netG(noise, input_att)
+
             reverseD.zero_grad()
 
             # train reverseD with real data
             reverseD_real = reverseD(reverse_feature, input_att)
             reverseD_real = reverseD_real.mean()
-            reverseD_real.backward(mone, retain_graph=True)
+            reverseD_real.backward(mone)
 
             # train reverseD with fake data
             fake_att = reverseG(reverse_feature) # generate fake data first
 
-            reverseD_fake = reverseD(reverse_feature, fake_att.detach())
+            reverseD_fake = reverseD(reverse_feature, fake_att.detach()) #? 是否真的需要detach
             reverseD_fake = reverseD_fake.mean()
-            reverseD_fake.backward(one, retain_graph=True)
+            reverseD_fake.backward(one)
 
             # gradient penalty
             reverse_gradient_penalty = calc_gradient_penalty(reverseD, input_att, fake_att.data, reverse_feature)
-            gradient_penalty.backward(retain_graph=True)
+            #? 换了输入数据的维度，是否还是能计算
+            #? 换了输入数据，梯度惩罚的计算是否还是原来的意义
+            gradient_penalty.backward()
 
             Wasserstein_reverse_D = reverseD_real - reverseD_fake
 
@@ -236,11 +241,11 @@ for epoch in range(opt.nepoch):
         reverseG_fake = reverseG_fake.mean()
         reverseG_cost = -reverseG_fake
 
-        reverseG_cost.backward(retain_graph=True)
+        reverseG_cost.backward()
         optimizerRG.step()
 
-        #! here is Generator update
-        errG = G_cost + opt.reverse_weight * reverseG_cost
+        # Original Generator Loss
+        errG = G_cost + opt.reverse_weight * reverseG_cost #? 这样直接做加法是不是也能像R网络那样直接影响到reverseG
         errG.backward()
         optimizerG.step()
 

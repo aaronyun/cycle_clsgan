@@ -7,7 +7,8 @@ def parse():
     parser = argparse.ArgumentParser(description='Read arguments from commandline')
 
     # DATA SPECIFICATION
-    parser.add_argument('--dataroot', default='/data0/docker/xingyun/mmcgan/data')
+    # parser.add_argument('--dataroot', default='/data0/docker/xingyun/mmcgan/data')
+    parser.add_argument('--dataroot', default='/mnt/f/extracted_features/res101')
     parser.add_argument('--dataset', default='AWA2', help='which dataset, AWA2 as the default dataset')
     parser.add_argument('--matdataset', default=True, help='whether dataset in matlab format')
     parser.add_argument('--image_embedding', default='res101')

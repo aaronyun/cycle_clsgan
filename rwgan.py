@@ -176,8 +176,6 @@ corresponding_epoch = 0
 
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
-        sample() # get a batch of data
-
         # --------------------------------------------
         # 训练D网络，等式（2）
         # --------------------------------------------
@@ -185,6 +183,7 @@ for epoch in range(opt.nepoch):
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
+            sample() # get a batch of data
 
             netD.zero_grad()
 

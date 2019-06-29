@@ -160,17 +160,17 @@ corresponding_epoch = 0
 print('epoch lossG lossD wDistance acc')
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
-        sample()
-        input_resv = Variable(input_res)
-        input_attv = Variable(input_att)
 
         # D training
         for p in netD.parameters():
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
+            sample()
 
             netD.zero_grad()
+            input_resv = Variable(input_res)
+            input_attv = Variable(input_att)
 
             # train D with real data
             criticD_real = netD(input_resv, input_attv)

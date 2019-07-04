@@ -55,7 +55,7 @@ def parse():
     # parser.add_argument('--r_iteration', type=int, default=3, help='the pretraining time of R net')
     # reverse net setting
     parser.add_argument('--reverse_iter', type=int, default=5, help='training iteration of reverse D')
-    parser.add_argument('--reverse_weight', type=float, default=1, help='weight of reverse net loss add on feature generator loss')
+    parser.add_argument('--consistency_weight', type=float, default=1, help='weight of semantic consistency loss add on feature generator loss')
 
 
     # EXPERIMENT ENVIRONMENT SPECIFICATION

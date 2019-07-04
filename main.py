@@ -17,11 +17,11 @@ exp_setting = '/zsl'
 # model_type = '/rwgan
 model_type = '/dwgan'
 
-exp_type = '/base'
+# exp_type = '/base'
+exp_type = '/basecpu'
 # exp_type = '/new_datasets'
 
-# data_sets = ['/awa', '/cub', '/flo', '/sun', '/awa2', '/apy']
-data_sets = ['/awa']
+data_sets = ['/awa', '/cub', '/flo', '/sun', '/awa2', '/apy']
 
 for data_set in data_sets:
     exp_file_path = './exp' + exp_setting + model_type + exp_type + data_set

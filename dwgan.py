@@ -53,6 +53,12 @@ print(reverseG)
 reverseD = mlp.MLP_reverse_D(opt)
 print(reverseD)
 
+judge = mlp.TF_judge(opt)
+print(judge)
+
+# semantic feature consistency loss
+semantic_consistency = nn.CosineSimilarity()
+
 # create input tensor
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
 input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
@@ -66,13 +72,18 @@ mone = one * -1
 if opt.cuda:
     netD.cuda()
     netG.cuda()
+    netR.cuda()
+    judge.cuda()
     reverseG.cuda()
     reverseD.cuda()
-    input_res, input_att, input_label = input_res.cuda(), input_att.cuda(), input_label.cuda()
+
     noise = noise.cuda()
+    input_res, input_att, input_label = input_res.cuda(), input_att.cuda(), input_label.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
+
+    semantic_consistency = semantic_consistency.cuda()
 
 # auxiliary functions
 def sample():
@@ -134,8 +145,10 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
     return gradient_penalty
 
 # setup optimizer
+#TODO 测试每个网络不同的学习率的设置对结果的影响
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerJudge = optim.Adam(judge.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerRD = optim.Adam(reverseD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerRG = optim.Adam(reverseG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
@@ -208,20 +221,20 @@ for epoch in range(opt.nepoch):
             # train reverseD with real data
             reverseD_real = reverseD(reverse_feature, input_att)
             reverseD_real = reverseD_real.mean()
-            reverseD_real.backward(mone)
+            reverseD_real.backward(mone, retain_graph=True)
 
             # train reverseD with fake data
             fake_att = reverseG(reverse_feature) # generate fake data first
 
-            reverseD_fake = reverseD(reverse_feature, fake_att.detach()) #? 是否真的需要detach
+            reverseD_fake = reverseD(reverse_feature, fake_att.detach())
             reverseD_fake = reverseD_fake.mean()
-            reverseD_fake.backward(one)
+            reverseD_fake.backward(one, retain_graph=True)
 
             # gradient penalty
             reverse_gradient_penalty = calc_gradient_penalty(reverseD, input_att, fake_att.data, reverse_feature)
             #? 换了输入数据的维度，是否还是能计算
             #? 换了输入数据，梯度惩罚的计算是否还是原来的意义
-            gradient_penalty.backward()
+            reverse_gradient_penalty.backward(retain_graph=True)
 
             Wasserstein_reverse_D = reverseD_real - reverseD_fake
 
@@ -241,11 +254,20 @@ for epoch in range(opt.nepoch):
         reverseG_fake = reverseG_fake.mean()
         reverseG_cost = -reverseG_fake
 
-        reverseG_cost.backward()
+        reverseG_cost.backward(retain_graph=True)
         optimizerRG.step()
 
+        # TF_JUDGE TRAINING
+        judge.zero_grad()
+        
+        consistencyScore = judge(fake_att, input_att)
+        consistencyScore = consistencyScore.mean()
+
+        consistencyScore.backward(retain_graph=True)
+        optimizerJudge.step()
+
         # Original Generator Loss
-        errG = G_cost + opt.reverse_weight * reverseG_cost #? 这样直接做加法是不是也能像R网络那样直接影响到reverseG
+        errG = G_cost + opt.consistency_weight * consistencyScore
         errG.backward()
         optimizerG.step()
 
@@ -259,7 +281,7 @@ for epoch in range(opt.nepoch):
     print('| reverseD_cost| reverseG_cost| Wasserstein_reverse_D |')
     print('|{:^14.4f}|{:^14.4f}|{:^23.4f}|'.format(reverseD_cost.data[0], reverseG_cost.data[0], Wasserstein_reverse_D.data[0]))
 
-    print('What we really cared loss: G loss=%.4f' % (errG.data[0]))
+    print('What we really cared loss(should decrease): G loss=%.4f' % (errG.data[0]))
 
     netG.eval()
 

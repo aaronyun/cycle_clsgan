@@ -187,3 +187,21 @@ class MLP_reverse_D(nn.Module):
         h = self.lrelu(self.fc1(h))
         h = self.fc2(h)
         return h
+
+class TF_judge(nn.Module):
+    def __init__(self, opt):
+        super(TF_judge, self).__init__()
+        self.fc1 = nn.Linear(opt.attSize*2, opt.attSize)
+        self.fc2 = nn.Linear(opt.attSize, 1)
+        self.relu = nn.ReLU(True)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+
+        self.apply(weights_init)
+
+    def forward(self, fake_att, real_att):
+        h = self.fc1(torch.cat((fake_att,real_att), 1))
+        h = self.lrelu(h)
+        h = self.fc2(h)
+        h = self.relu(h)
+
+        return h

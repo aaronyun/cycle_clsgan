@@ -1,8 +1,7 @@
-#!/usr/bin/python3.6
+#!/usr/bin/python3.7
 
 import torch
 import torch.nn as nn
-
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -24,16 +23,15 @@ class MLP_CRITIC(nn.Module):
 
         self.apply(weights_init)
 
-    def forward(self, x, att):
-        h = torch.cat((x, att), 1)
-        h = self.lrelu(self.fc1(h))
-        h = self.fc2(h)
-        return h
+    def forward(self, vf, att):
+        in_ = torch.cat((vf, att), 1)
+        h = self.lrelu(self.fc1(in_))
+        out_ = self.fc2(h)
+        return out_
 
 class MLP_G(nn.Module):
     def __init__(self, opt):
         super(MLP_G, self).__init__()
-        # fc1的输入大小是属性向量的大小加上噪声的大小
         self.fc1 = nn.Linear(opt.attSize + opt.nz, opt.ngh)
         self.fc2 = nn.Linear(opt.ngh, opt.resSize)
         self.lrelu = nn.LeakyReLU(0.2, True)
@@ -43,10 +41,10 @@ class MLP_G(nn.Module):
         self.apply(weights_init)
 
     def forward(self, noise, att):
-        h = torch.cat((noise, att), 1)
-        h = self.lrelu(self.fc1(h))
-        h = self.relu(self.fc2(h))
-        return h
+        in_ = torch.cat((noise, att), 1)
+        h = self.lrelu(self.fc1(in_))
+        out_ = self.relu(self.fc2(h))
+        return out_
 
 # 线性映射R网络
 class MLP_R(nn.Module):

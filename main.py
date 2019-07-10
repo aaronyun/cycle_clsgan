@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/python3.7
 
 import os
 import shlex
@@ -6,22 +6,22 @@ import subprocess
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 
-exp_setting = '/zsl'
-# exp_setting = '/gzsl'
+# exp_setting = '/zsl'
+exp_setting = '/gzsl'
 
-# model_type = '/bcclswgan'
-# model_type = '/bcwgan'
-# model_type = '/bcrwgan'
 # model_type = '/clswgan'
 # model_type = '/wgan'
 # model_type = '/rwgan
 model_type = '/dwgan'
+# model_type = '/bcclswgan'
+# model_type = '/bcwgan'
+# model_type = '/bcrwgan'
 
-# exp_type = '/base'
-exp_type = '/basecpu'
+exp_type = '/base'
 # exp_type = '/new_datasets'
 
-data_sets = ['/awa', '/cub', '/flo', '/sun', '/awa2', '/apy']
+# data_sets = ['/awa', '/cub', '/flo', '/sun', '/awa2', '/apy']
+data_sets = ['/awa']
 
 for data_set in data_sets:
     exp_file_path = './exp' + exp_setting + model_type + exp_type + data_set

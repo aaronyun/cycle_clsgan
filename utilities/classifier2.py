@@ -1,10 +1,10 @@
-import sys
-
-import numpy as np
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 import torch.optim as optim
+import numpy as np
 from sklearn.preprocessing import MinMaxScaler 
+import sys
 
 from utilities import util
 
@@ -65,10 +65,10 @@ class CLASSIFIER:
                 self.input.copy_(batch_input)
                 self.label.copy_(batch_label)
                    
-                # inputv = Variable(self.input)
-                # labelv = Variable(self.label)
-                output = self.model(self.input)
-                loss = self.criterion(output, self.label)
+                inputv = Variable(self.input)
+                labelv = Variable(self.label)
+                output = self.model(inputv)
+                loss = self.criterion(output, labelv)
                 mean_loss += loss.data[0]
                 loss.backward()
                 self.optimizer.step()
@@ -90,10 +90,10 @@ class CLASSIFIER:
                 self.input.copy_(batch_input)
                 self.label.copy_(batch_label)
                    
-                # inputv = Variable(self.input)
-                # labelv = Variable(self.label)
-                output = self.model(self.input)
-                loss = self.criterion(output, self.label)
+                inputv = Variable(self.input)
+                labelv = Variable(self.label)
+                output = self.model(inputv)
+                loss = self.criterion(output, labelv)
                 loss.backward()
                 self.optimizer.step()
                 #print('Training classifier loss= ', loss.data[0])
@@ -153,11 +153,9 @@ class CLASSIFIER:
         for i in range(0, ntest, self.batch_size):
             end = min(ntest, start+self.batch_size)
             if self.cuda:
-                # output = self.model(Variable(test_X[start:end].cuda(), volatile=True)) 
-                output = self.model(test_X[start:end].cuda()) 
+                output = self.model(Variable(test_X[start:end].cuda(), volatile=True)) 
             else:
-                # output = self.model(Variable(test_X[start:end], volatile=True))
-                output = self.model(test_X[start:end])
+                output = self.model(Variable(test_X[start:end], volatile=True)) 
             _, predicted_label[start:end] = torch.max(output.data, 1)
             start = end
 
@@ -180,11 +178,9 @@ class CLASSIFIER:
         for i in range(0, ntest, self.batch_size):
             end = min(ntest, start+self.batch_size)
             if self.cuda:
-                # output = self.model(Variable(test_X[start:end].cuda(), volatile=True)) 
-                output = self.model(test_X[start:end].cuda())
+                output = self.model(Variable(test_X[start:end].cuda(), volatile=True)) 
             else:
-                # output = self.model(Variable(test_X[start:end], volatile=True)) 
-                output = self.model(test_X[start:end]) 
+                output = self.model(Variable(test_X[start:end], volatile=True)) 
             _, predicted_label[start:end] = torch.max(output.data, 1)
             start = end
 

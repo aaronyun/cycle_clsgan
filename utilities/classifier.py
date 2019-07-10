@@ -1,11 +1,10 @@
-import sys
-
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.autograd import Variable
+import torch.optim as optim
+import numpy as np
 from sklearn.preprocessing import MinMaxScaler 
+import sys
 
 from utilities import util
 

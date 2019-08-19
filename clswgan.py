@@ -7,7 +7,7 @@ import math
 import argparse
 
 import torch
-import torch.nn as nn
+import torch.nn as nn 
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
@@ -137,7 +137,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-
+    
 # train a classifier on seen classes, obtain \theta of Equation (4)
 pretrain_cls = classifier.CLASSIFIER(data.train_feature, util.map_label(data.train_label, data.seenclasses), data.seenclasses.size(0), opt.resSize, opt.cuda, 0.001, 0.5, 50, 100, opt.pretrain_classifier)
 
@@ -229,10 +229,10 @@ for epoch in range(opt.nepoch):
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
         if cls_.H > max_H:
-            mac_H = cls_.H
+            max_H = cls_.H
             corresponding_epoch = epoch
     else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num) 
@@ -240,7 +240,7 @@ for epoch in range(opt.nepoch):
         cls_ = classifier2.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], acc))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], acc))
 
         if acc > max_acc:
             max_acc = acc
@@ -249,6 +249,6 @@ for epoch in range(opt.nepoch):
     netG.train() # reset G to training mode
 
 if opt.gzsl:
-    print('max H: %f in epoch: %d' % (max_H, corresponding_epoch))
+    print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
 else:
-    print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch))
+    print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch+1))

@@ -213,12 +213,12 @@ for epoch in range(opt.nepoch):
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
         # print('unseen=%.4f, seen=%.4f, h=%.4f' % ())
 
         if cls_.H > max_H:
-            mac_H = cls_.H
+            max_H = cls_.H
             corresponding_epoch = epoch
     else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num) 
@@ -226,7 +226,7 @@ for epoch in range(opt.nepoch):
         cls_ = classifier2.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], acc))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], acc))
 
         # print('unseen class accuracy= ', acc)
 
@@ -237,6 +237,6 @@ for epoch in range(opt.nepoch):
     netG.train() # reset G to training mode
 
 if opt.gzsl:
-    print('max H: %f in epoch: %d' % (max_H, corresponding_epoch))
+    print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
 else:
-    print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch))
+    print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch+1))

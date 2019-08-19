@@ -13,6 +13,7 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
+# DISCRIMINATOR
 class MLP_CRITIC(nn.Module):
     def __init__(self, opt): 
         super(MLP_CRITIC, self).__init__()
@@ -29,6 +30,23 @@ class MLP_CRITIC(nn.Module):
         out_ = self.fc2(h)
         return out_
 
+class MLP_D(nn.Module):
+    def __init__(self, opt): 
+        super(MLP_D, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize + opt.attSize, opt.ndh)
+        self.fc2 = nn.Linear(opt.ndh, 1)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+        self.sigmoid = nn.Sigmoid()
+
+        self.apply(weights_init)
+
+    def forward(self, x, att):
+        h = torch.cat((x, att), 1) 
+        h = self.lrelu(self.fc1(h))
+        h = self.sigmoid(self.fc2(h))
+        return h
+
+# GENERATOR
 class MLP_G(nn.Module):
     def __init__(self, opt):
         super(MLP_G, self).__init__()
@@ -46,20 +64,19 @@ class MLP_G(nn.Module):
         out_ = self.relu(self.fc2(h))
         return out_
 
-# 线性映射R网络
-class MLP_R(nn.Module):
-    def __init__(self, opt):
-        super(MLP_R, self).__init__()
-        self.fc = nn.Linear(opt.resSize, opt.attSize)
-        self.lrelu = nn.LeakyReLU(0.2, True)
+# REVERSE GENERATOR
+# class MLP_R(nn.Module):
+#     def __init__(self, opt):
+#         super(MLP_R, self).__init__()
+#         self.fc = nn.Linear(opt.resSize, opt.attSize)
+#         self.lrelu = nn.LeakyReLU(0.2, True)
 
-        self.apply(weights_init)
+#         self.apply(weights_init)
 
-    def forward(self, res):
-        h = self.lrelu(self.fc(res))
-        return h
+#     def forward(self, res):
+#         h = self.lrelu(self.fc(res))
+#         return h
 
-# 单隐藏层R网络
 class MLP_1HL_Dropout_R(nn.Module):
     def __init__(self, opt):
         super(MLP_1HL_Dropout_R, self).__init__()
@@ -78,7 +95,6 @@ class MLP_1HL_Dropout_R(nn.Module):
 
         return h
 
-# 双隐藏层R网络
 class MLP_2HL_Dropout_R(nn.Module):
     def __init__(self, opt):
         super(MLP_2HL_Dropout_R, self).__init__()
@@ -152,24 +168,130 @@ class MLP_4HL_Dropout_R(nn.Module):
 
         return h
 
-class MLP_reverse_G(nn.Module):
+# REVERSE GENERATOR & DISCRIMINATOR
+class MLP_1HL_reverseG(nn.Module):
     def __init__(self, opt):
-        super(MLP_reverse_G, self).__init__()
-        self.fc1 = nn.Linear(opt.resSize, opt.ngh)
-        self.fc2 = nn.Linear(opt.ngh, opt.attSize)
+        super(MLP_1HL_reverseG, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize+opt.r_nz, opt.nrgh)
+        self.fc2 = nn.Linear(opt.nrgh, opt.attSize)
         self.lrelu = nn.LeakyReLU(0.2, True)
         self.relu = nn.ReLU(True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
 
         self.apply(weights_init)
 
-    def forward(self, res):
-        h = self.fc1(res)
+    def forward(self, res, r_noise):
+        _input = torch.cat((res, r_noise), 1)
+
+        h = self.fc1(_input)
         h = self.lrelu(h)
+        h = self.dropout(h)
+
         h = self.fc2(h)
+        _out = self.relu(h)
+
+        return _out
+
+class MLP_2HL_reverseG(nn.Module):
+    def __init__(self, opt):
+        super(MLP_2HL_reverseG, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize+opt.r_nz, opt.nrgh1)
+        self.fc2 = nn.Linear(opt.nrgh1, opt.nrgh2)
+        self.fc3 = nn.Linear(opt.nrgh2, opt.attSize)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+        self.relu = nn.ReLU(True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
+
+        self.apply(weights_init)
+
+    def forward(self, res, r_noise):
+        _input = torch.cat((res, r_noise), 1)
+
+        h = self.fc1(_input)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc2(h)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc3(h)
+        _out = self.relu(h)
+
+        return _out
+
+class MLP_3HL_reverseG(nn.Module):
+    def __init__(self, opt):
+        super(MLP_3HL_reverseG, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize+opt.r_nz, opt.nrgh1)
+        self.fc2 = nn.Linear(opt.nrgh1, opt.nrgh2)
+        self.fc3 = nn.Linear(opt.nrgh2, opt.nrgh3)
+        self.fc4 = nn.Linear(opt.nrgh3, opt.attSize)
+        self.relu = nn.ReLU(True)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
+
+        self.apply(weights_init)
+
+    def forward(self, res, r_noise):
+        _input = torch.cat((res, r_noise), 1)
+
+        h = self.fc1(_input)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc2(h)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc3(h)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc4(h)
+        _out = self.relu(h)
+
+        return h
+
+class MLP_4HL_reverseG(nn.Module):
+    def __init__(self, opt):
+        super(MLP_4HL_reverseG, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize+opt.r_nz, opt.nrgh1)
+        self.fc2 = nn.Linear(opt.nrgh1, opt.nrgh2)
+        self.fc3 = nn.Linear(opt.nrgh2, opt.nrgh3)
+        self.fc4 = nn.Linear(opt.nrgh3, opt.nrgh4)
+        self.fc5 = nn.Linear(opt.nrgh4, opt.attSize)
+        self.relu = nn.ReLU(True)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+        self.dropout = nn.Dropout(p=opt.drop_rate)
+
+        self.apply(weights_init)
+
+    def forward(self, res, r_noise):
+        _input = torch.cat((res, r_noise), 1)
+
+        h = self.fc1(_input)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc2(h)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc3(h)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc4(h)
+        h = self.lrelu(h)
+        h = self.dropout(h)
+
+        h = self.fc5(h)
         h = self.relu(h)
 
         return h
 
+# REVERSE DISCRIMINATOR
 class MLP_reverse_D(nn.Module):
     def __init__(self, opt): 
         super(MLP_reverse_D, self).__init__()
@@ -180,12 +302,13 @@ class MLP_reverse_D(nn.Module):
 
         self.apply(weights_init)
 
-    def forward(self, x, att):
-        h = torch.cat((x, att), 1)
+    def forward(self, att, x):
+        h = torch.cat((att, x), 1)
         h = self.lrelu(self.fc1(h))
         h = self.fc2(h)
         return h
 
+# JUDGE
 class TF_judge(nn.Module):
     def __init__(self, opt):
         super(TF_judge, self).__init__()
@@ -193,13 +316,40 @@ class TF_judge(nn.Module):
         self.fc2 = nn.Linear(opt.attSize, 1)
         self.relu = nn.ReLU(True)
         self.lrelu = nn.LeakyReLU(0.2, True)
+        self.sigmoid = nn.Sigmoid()
 
         self.apply(weights_init)
 
     def forward(self, fake_att, real_att):
-        h = self.fc1(torch.cat((fake_att,real_att), 1))
+        _in = torch.cat((fake_att, real_att), 1)
+        h = self.fc1(_in)
         h = self.lrelu(h)
         h = self.fc2(h)
-        h = self.relu(h)
+        # h = self.sigmoid(h)
+        _out = self.relu(h)
 
-        return h
+        return _out
+
+class MLP_Dropout_Fusion(nn.Module):
+    def __init__(self, opt):
+        super(MLP_Dropout_Fusion, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, opt.hfSizp)
+
+        self.relu = nn.ReLU(True)
+        self.lrelu = nn.LeakyReLU(0.2, True)
+
+        self.drop = nn.Dropout(p=opt.drop_rate)
+
+    def forward(self, vf):
+        _in = vf
+        h = self.lrelu(self.fc1(_in))
+        h = self.drop(h)
+        h = self.lrelu(self.fc2(h))
+        h = self.drop(h)
+        h = self.lrelu(self.fc3(h))
+        _out = self.relu(self.fc4(h))
+
+        return _out

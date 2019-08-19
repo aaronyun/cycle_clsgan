@@ -9,12 +9,12 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as tfunc
-import torch.autograd as autograd
+import torch.autograd as autograd 
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
-from utilities import mix, opts, util
+from utilities import opts, util
 from utilities import classifier, classifier2, mlp
 
 opt = opts.parse()
@@ -57,24 +57,16 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-if opt.dataset == 'FLO':
+if opt.r_hl == 1:
     netR = mlp.MLP_1HL_Dropout_R(opt)
-    # netR.load_state_dict(torch.load(opt.r_path + 'FLO.pth'))
-elif opt.dataset == 'CUB':
+elif opt.r_hl == 2:
     netR = mlp.MLP_2HL_Dropout_R(opt)
-    # netR.load_state_dict(torch.load(opt.r_path + 'CUB1.pth'))
-elif opt.dataset == 'SUN':
+elif opt.r_hl == 3:
     netR = mlp.MLP_3HL_Dropout_R(opt)
-    # netR.load_state_dict(torch.load(opt.r_path + 'SUN1.pth'))
-elif opt.dataset == 'AWA1':
+elif opt.r_hl == 4:
     netR = mlp.MLP_4HL_Dropout_R(opt)
-    # netR.load_state_dict(torch.load(opt.r_path + 'AWA1.pth'))
-elif opt.dataset == 'APY':
-    netR = mlp.MLP_2HL_Dropout_R(opt)
-elif opt.dataset == 'AWA2':
-    netR = mlp.MLP_2HL_Dropout_R(opt)
 else:
-    raise('There is no data set called ', opt.dataset)
+    raise('wrong value of r_hl')
 print(netR)
 
 # semantic feature consistency loss
@@ -168,12 +160,12 @@ optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
 # store best result and corresponding epoch
-max_H = 0
-max_acc = 0
+max_H = 0.0
+max_acc = 0.0
 corresponding_epoch = 0
 
 if opt.gzsl:
-    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_seen  |  ACC_unseen  |    H    |')
+    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |  ACC_seen  |    H    |')
 else:
     print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |')
 
@@ -220,33 +212,37 @@ for epoch in range(opt.nepoch):
         for p in netD.parameters():
             p.requires_grad = False # avoid computation
 
+        sample()
         netG.zero_grad()
 
         # generate fake data
-        input_attv = Variable(input_att)
         noise.normal_(0, 1)
         noisev = Variable(noise)
-        fake = netG(noisev, input_attv)
+        input_attv = Variable(input_att)
+        fake_vf = netG(noisev, input_attv)
 
-        criticG_fake = netD(fake, input_attv)
+        criticG_fake = netD(fake_vf, input_attv)
         criticG_fake = criticG_fake.mean()
 
-        G_cost = -criticG_fake
+        G_cost = -criticG_fake # Decrease
 
         ################################
         # R TRAINING
         ################################
         netR.zero_grad()
 
-        syn_att = netR(fake)
+        syn_att = netR(fake_vf)
 
-        errR = r_criterion(syn_att, input_attv)
-        R_cost = errR.mean()
+        # caculate r loss with predefined loss function
+        att_consistency = r_criterion(syn_att, input_attv)
+        R_cost = att_consistency.mean()
 
-        R_cost.backward(mone)
+        # update R
+        R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
 
-        errG = G_cost  - opt.r_weight * R_cost
+        # Final Generator Loss
+        errG = G_cost - opt.r_weight * R_cost
         errG.backward()
         optimizerG.step()
 
@@ -261,10 +257,10 @@ for epoch in range(opt.nepoch):
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^12.4f}_{:^14.4f}|{:^9.4f}|'.format(epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
         if cls_.H > max_H:
-            mac_H = cls_.H
+            max_H = cls_.H
             corresponding_epoch = epoch
     else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
@@ -272,7 +268,7 @@ for epoch in range(opt.nepoch):
         cls_ = classifier2.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
 
         if acc > max_acc:
             max_acc = acc
@@ -281,6 +277,6 @@ for epoch in range(opt.nepoch):
     netG.train()
 
 if opt.gzsl:
-    print('max H: %f in epoch: %d' % (max_H, corresponding_epoch))
+    print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
 else:
-    print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch))
+    print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch+1))

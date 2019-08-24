@@ -53,8 +53,10 @@ def parse():
     parser.add_argument('--nrgh4', type=int, default=128, help='size of the fourth layer in R net')
 
     #! FUSION NET SPECIFICATION
-    parser.add_argument('--hfSize', type=int, default=85, help='hidden feature size(final layer size of fusion net)')
+    #? --hfSize应该分数据集分别调参
+    parser.add_argument('--hfSize', type=int, default=350, help='hidden feature size(final layer size of fusion net)')
     parser.add_argument('--fusion_iter', type=int, default=3, help='how many times training fusion net in a epoch')
+    parser.add_argument('--triple_batch_size', type=int, default=128, help='batch size of Fusion Net training')
 
     #! EXPERIMENT SPECIFICATION
     # exp type

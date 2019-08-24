@@ -15,11 +15,14 @@ class CLASSIFIER:
         self.train_X =  _train_X 
         self.train_Y = _train_Y 
 
+        # test seen data
         self.test_seen_feature = data_loader.test_seen_feature
         self.test_seen_label = data_loader.test_seen_label 
+        self.seenclasses = data_loader.seenclasses
+
+        # test unseen data
         self.test_unseen_feature = data_loader.test_unseen_feature
         self.test_unseen_label = data_loader.test_unseen_label 
-        self.seenclasses = data_loader.seenclasses
         self.unseenclasses = data_loader.unseenclasses
 
         self.batch_size = _batch_size # equals to syn_num

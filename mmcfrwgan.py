@@ -1,8 +1,6 @@
 from __future__ import print_function
 
 import os
-import sys
-import math
 import argparse
 import random
 
@@ -251,18 +249,19 @@ for epoch in range(opt.nepoch):
         # FEATURE FUSION TRAINING
         ################################
         # Data Preperation
-        train_vf = input_res # anchor from training data
+        train_vf = input_vfv.data # anchor from training data
         gen_vf = gen_vfv.data # anchor generated from attribute
         anchor_vf = torch.cat((train_vf, gen_vf), 0)
+        anchor_index = batch_index.repeat(1,2)
 
-        triple_data = util.Triple_Selector(data, anchor_index) # triple selector
+        triple_data = util.Triple_Selector(data, anchor_vf, anchor_index) # triple selector
 
         # Training
         for iter_f in range(opt.fusion_iter):
             netF.zero_grad()
 
             # train F Net with triple of train and generated visual feature
-            mixing_triple_batch = triple_data.next_batch(opt.triple_batch_size) # get a batch of mixing triples
+            mixing_triple_batch = triple_data.next_batch(opt.triple_batch_size, triple_type='hardest') # get a batch of mixing triples
             mixing_triple_batchv = Variable(mixing_triple_batch)
             mixing_hf = netF(mixing_triple_batchv)
 
@@ -301,7 +300,7 @@ for epoch in range(opt.nepoch):
 
         # loss of R
         errR_train = cos_criterion(syn_train_attv, input_attv)
-        errR_gen = cos_criterion(syn_gen_attv, )
+        errR_gen = cos_criterion(syn_gen_attv, input_attv)
         R_cost = err_train + err_gen
         R_cost = R_cost.mean()
 

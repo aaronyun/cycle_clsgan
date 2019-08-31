@@ -21,8 +21,8 @@ def parse():
     parser.add_argument('--standardization', action='store_true', default=False)
 
     #! G&D SPECIFICATION
-    parser.add_argument('--netG', default='', help='path to netG (to continue training')
-    parser.add_argument('--netD', default='', help='path to netD (to continue training')
+    # parser.add_argument('--netG', default='', help='path to netG (to continue training')
+    # parser.add_argument('--netD', default='', help='path to netD (to continue training')
     parser.add_argument('--netG_name', default='')
     parser.add_argument('--netD_name', default='')
     parser.add_argument('--ngh', type=int, default=4096, help='size of the hidden layer in generator')
@@ -30,9 +30,8 @@ def parse():
     parser.add_argument('--nz', type=int, default=85, help='size of the noise z vector')
 
     #! REVERSE NET SPECIFICATION
-    # r net setting
-    parser.add_argument('--r_nz', type=int, default=2048, help='size of the noise in reverse net')
-    parser.add_argument('--r_path', default='/home/xingyun/docker/mmcgan/r_param', help='path to load parameters of R net')
+    # parser.add_argument('--r_nz', type=int, default=2048, help='size of the noise in reverse net')
+    # parser.add_argument('--r_path', default='/home/xingyun/docker/mmcgan/r_param', help='path to load parameters of R net')
     parser.add_argument('--r_hl', type=int, default=1, help='how many hidden layers in R net')
     parser.add_argument('--nrh', type=int, default=4096, help='size of hidden units in R net when R has only one hidden layer')
     parser.add_argument('--nrh1', type=int, default=1024, help='size of the first layer in R net')
@@ -41,20 +40,19 @@ def parse():
     parser.add_argument('--nrh4', type=int, default=128, help='size of the fourth layer in R net')
     parser.add_argument('--drop_rate', type=float, default=0.2, help='the rate of unit to drop in R net')
     parser.add_argument('--r_weight', type=float, default=1, help='weight of att generate loss')
-    parser.add_argument('--r_iteration', type=int, default=3, help='the pretraining time of R net')
-    # reverse net setting
-    parser.add_argument('--reverse_iter', type=int, default=5, help='training iteration of reverse D')
+    # parser.add_argument('--r_iteration', type=int, default=3, help='the pretraining time of R net')
+    # parser.add_argument('--reverse_iter', type=int, default=5, help='training iteration of reverse D')
     parser.add_argument('--consistency_weight', type=float, default=1, help='weight of semantic consistency loss add on feature generator loss')
-    parser.add_argument('--rg_hl', type=int , default=1, help='layers of reverse generator')
-    parser.add_argument('--nrgh', type=int, default=4096, help='size of hidden units in R net when R has only one hidden layer')
-    parser.add_argument('--nrgh1', type=int, default=1024, help='size of the first layer in R net')
-    parser.add_argument('--nrgh2', type=int, default=512, help='size of the second layer in R net')
-    parser.add_argument('--nrgh3', type=int, default=256, help='size of the third layer in R net')
-    parser.add_argument('--nrgh4', type=int, default=128, help='size of the fourth layer in R net')
+    # parser.add_argument('--rg_hl', type=int , default=1, help='layers of reverse generator')
+    # parser.add_argument('--nrgh', type=int, default=4096, help='size of hidden units in R net when R has only one hidden layer')
+    # parser.add_argument('--nrgh1', type=int, default=1024, help='size of the first layer in R net')
+    # parser.add_argument('--nrgh2', type=int, default=512, help='size of the second layer in R net')
+    # parser.add_argument('--nrgh3', type=int, default=256, help='size of the third layer in R net')
+    # parser.add_argument('--nrgh4', type=int, default=128, help='size of the fourth layer in R net')
 
     #! FUSION NET SPECIFICATION
     #? --hfSize应该分数据集分别调参
-    parser.add_argument('--hfSize', type=int, default=350, help='hidden feature size(final layer size of fusion net)')
+    parser.add_argument('--hfSize', type=int, default=512, help='hidden feature size(final layer size of fusion net)')
     parser.add_argument('--fusion_iter', type=int, default=3, help='how many times training fusion net in a epoch')
     parser.add_argument('--triple_batch_size', type=int, default=128, help='batch size of Fusion Net training')
 
@@ -85,7 +83,7 @@ def parse():
 
     #! UNKNOWN
     parser.add_argument('--outname', help='folder to output data and model checkpoints')
-    parser.add_argument('--outf', default='./checkpoint/', help='folder to output data and model checkpoints')
+    # parser.add_argument('--outf', default='./checkpoint/', help='folder to output data and model checkpoints')
     parser.add_argument('--save_every', type=int, default=100)
     parser.add_argument('--print_every', type=int, default=1)
     parser.add_argument('--start_epoch', type=int, default=0)

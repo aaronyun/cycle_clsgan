@@ -12,16 +12,22 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
+import matplotlib.pyplot as plt
+
 from utilities import opts, util
 from utilities import classifier, classifier2, mlp
+
+#------------------------------------------------------------------------------#
 
 opt = opts.parse()
 print(opt)
 
-try:
-    os.makedirs(opt.outf)
-except OSError:
-    pass
+# try:
+#     os.makedirs(opt.outf)
+# except OSError:
+#     pass
+
+#------------------------------------------------------------------------------#
 
 # initialize internal state
 if opt.manualSeed is None:
@@ -39,22 +45,28 @@ cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
+#------------------------------------------------------------------------------#
+
 # load datasets and datamixer
 data = util.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 # data_mixer = mix.DataMixer(data, opt)
 
-# initialize neural nets
+#------------------------------------------------------------------------------#
+
+# Generator initialize
 netG = mlp.MLP_G(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
+# Discriminator initialize
 netD = mlp.MLP_CRITIC(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
+# Reverse net initialize
 if opt.r_hl == 1:
     netR = mlp.MLP_1HL_Dropout_R(opt)
 elif opt.r_hl == 2:
@@ -67,9 +79,18 @@ else:
     raise('wrong value of r_hl')
 print(netR)
 
-# semantic feature consistency loss
-r_criterion = nn.CosineSimilarity()
-# r_criterion = nn.PairwiseDistance()
+#------------------------------------------------------------------------------#
+
+# setup optimizer
+optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+
+# loss function
+cos_criterion = nn.CosineSimilarity()
+# euc_criterion = nn.PairwiseDistance(p=2)
+
+#------------------------------------------------------------------------------#
 
 # create input tensor
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
@@ -87,17 +108,17 @@ if opt.cuda:
 
     noise, input_res, input_att, input_label  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda()
 
-    r_criterion = r_criterion.cuda()
+    cos_criterion = cos_criterion.cuda()
+    # euc_criterion = euc_criterion.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
 
+#------------------------------------------------------------------------------#
+
 # auxiliary functions
 def sample():
-    if opt.bc:
-        batch_feature, batch_label, batch_att = data_mixer.get_mixing_batch()
-    else:
-        batch_feature, batch_label, batch_att = data.next_batch(opt.batch_size)
+    batch_feature, batch_label, batch_att, batch_index = data.next_batch(opt.batch_size)
 
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
@@ -152,10 +173,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 
     return gradient_penalty
 
-# setup optimizer
-optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+#------------------------------------------------------------------------------#
 
 # store best result and corresponding epoch
 max_H = 0.0
@@ -169,6 +187,9 @@ else:
 
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
+
+#------------------------------------------------------------------------------#
+
         ################################
         # DISCRIMINATOR TRAINING
         ################################
@@ -176,9 +197,9 @@ for epoch in range(opt.nepoch):
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
-            sample()
             netD.zero_grad()
 
+            sample()
             input_resv = Variable(input_res)
             input_attv = Variable(input_att)
 
@@ -187,11 +208,12 @@ for epoch in range(opt.nepoch):
             criticD_real = criticD_real.mean()
             criticD_real.backward(mone)
 
-            # train D with generated data
+            # generate fake visual feature
             noise.normal_(0, 1)
             noisev = Variable(noise)
             fake = netG(noisev, input_attv)
 
+            # train D with generated data
             criticD_fake = netD(fake.detach(), input_attv)
             criticD_fake = criticD_fake.mean()
             criticD_fake.backward(one)
@@ -200,49 +222,62 @@ for epoch in range(opt.nepoch):
             gradient_penalty = calc_gradient_penalty(netD, input_res, fake.data, input_attv)
             gradient_penalty.backward()
 
+            # wasserstein distance
             Wasserstein_D = criticD_real - criticD_fake
+
+            # discriminator loss
             D_cost = criticD_fake - criticD_real + gradient_penalty
             optimizerD.step()
+
+        for p in netD.parameters():
+            p.requires_grad = False
+
+#------------------------------------------------------------------------------#
 
         ############################
         # GENERATOR TRAINING
         ###########################
-        for p in netD.parameters():
-            p.requires_grad = False # avoid computation
+        netG.zero_grad()
 
         sample()
-        netG.zero_grad()
+        input_attv = Variable(input_att)
 
         # generate fake data
         noise.normal_(0, 1)
         noisev = Variable(noise)
-        input_attv = Variable(input_att)
-        fake_vf = netG(noisev, input_attv)
+        gen_vfv = netG(noisev, input_attv)
 
-        criticG_fake = netD(fake_vf, input_attv)
+        # generate fake data
+        criticG_fake = netD(gen_vfv, input_attv)
         criticG_fake = criticG_fake.mean()
 
         G_cost = -criticG_fake # Decrease
+
+#------------------------------------------------------------------------------#
 
         ################################
         # R TRAINING
         ################################
         netR.zero_grad()
 
-        syn_att = netR(fake_vf)
+        # R training
+        syn_attv = netR(gen_vfv)
 
-        # caculate r loss with predefined loss function
-        att_consistency = r_criterion(syn_att, input_attv)
-        R_cost = att_consistency.mean()
+        # attribute consistency loss
+        R_cost = cos_criterion(syn_attv, input_attv)
+        R_cost = R_cost.mean()
 
-        # update R
         R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
 
-        # Final Generator Loss
+#------------------------------------------------------------------------------#
+
+        # FINAL GENERATOR LOSS
         errG = G_cost - opt.r_weight * R_cost
         errG.backward()
         optimizerG.step()
+
+#------------------------------------------------------------------------------#
 
     netG.eval()
 

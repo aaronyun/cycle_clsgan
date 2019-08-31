@@ -4,7 +4,6 @@ from torch.autograd import Variable
 import torch.optim as optim
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler 
-import sys
 
 from utilities import util
 

@@ -3,7 +3,6 @@ from __future__ import print_function
 import os
 import argparse
 import random
-import time
 
 import torch
 import torch.nn as nn
@@ -14,6 +13,7 @@ from torch.autograd import Variable
 
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
 from utilities import opts, util
@@ -25,10 +25,10 @@ from utilities import classifier, classifier2, mlp, f_classifier
 opt = opts.parse()
 print(opt)
 
-try:
-    os.makedirs(opt.outf)
-except OSError:
-    pass
+# try:
+#     os.makedirs(opt.outf)
+# except OSError:
+#     pass
 
 #------------------------------------------------------------------------------#
 
@@ -57,34 +57,35 @@ print("# of training samples: ", data.ntrain)
 
 # Generator initialize
 netG = mlp.MLP_G(opt)
-if opt.netG != '':
-    netG.load_state_dict(torch.load(opt.netG))
+# if opt.netG != '':
+#     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 # Discriminator initialize
 netD = mlp.MLP_CRITIC(opt)
-if opt.netD != '':
-    netD.load_state_dict(torch.load(opt.netD))
+# if opt.netD != '':
+#     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
 # Reverse net initialize
-if opt.r_hl == 1:
-    netR = mlp.MLP_1HL_Dropout_R(opt)
-elif opt.r_hl == 2:
-    netR = mlp.MLP_2HL_Dropout_R(opt)
-elif opt.r_hl == 3:
-    netR = mlp.MLP_3HL_Dropout_R(opt)
-elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_R(opt)
-else:
-    raise('wrong value of r_hl')
-print(netR)
-
+# if opt.r_hl == 1:
+#     netR = mlp.MLP_1HL_Dropout_R(opt)
+# elif opt.r_hl == 2:
+#     netR = mlp.MLP_2HL_Dropout_R(opt)
+# elif opt.r_hl == 3:
+#     netR = mlp.MLP_3HL_Dropout_R(opt)
+# elif opt.r_hl == 4:
+#     netR = mlp.MLP_4HL_Dropout_R(opt)
+# else:
+#     raise('wrong value of r_hl')
 # netR = mlp.AD_2HL_Dropout_R(opt)
-# print(netR)
+#? 测试是否是因为R网络的拟合能力变差了，针对cub采用3层的R网络
+netR = mlp.test_3_HL_R(opt)
+print(netR)
+#! 唯独CUB(312)和FLO(1024)数据集的属性维度变大
 
 # Fusion net initialize
-netF = mlp.MLP_Dropout_Fusion(opt)
+netF = mlp.MLP_DropoutAdapt(opt)
 print(netF)
 
 #------------------------------------------------------------------------------#
@@ -109,11 +110,6 @@ input_label = torch.LongTensor(opt.batch_size)
 input_index = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
 
-tsne_train_vf = torch.FloatTensor(opt.batch_size, opt.resSize)
-tsne_gen_vf = torch.FloatTensor(opt.batch_size, opt.resSize)
-tsne_train_hf = torch.FloatTensor(opt.batch_size, opt.hfSize)
-tsne_gen_hf = torch.FloatTensor(opt.batch_size, opt.hfSize)
-
 one = torch.FloatTensor([1])
 mone = one * -1
 
@@ -125,13 +121,9 @@ if opt.cuda:
 
     noise, input_res, input_att, input_label, input_index  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda(), input_index.cuda()
 
-    tsne_train_vf = tsne_train_vf.cuda()
-    tsne_train_hf = tsne_train_hf.cuda()
-    tsne_gen_vf = tsne_gen_vf.cuda()
-    tsne_gen_hf = tsne_gen_hf.cuda()
-
     cos_criterion = cos_criterion.cuda()
     triplet_criterion = triplet_criterion.cuda()
+    euc_criterion = euc_criterion.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
@@ -202,9 +194,6 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 
 #------------------------------------------------------------------------------#
 
-
-# preperation for visualization
-data_to_plot = []
 # store best result and corresponding epoch
 max_H = 0.0
 max_acc = 0.0
@@ -293,9 +282,6 @@ for epoch in range(opt.nepoch):
         input_vf = input_res # anchor from training data
         gen_vf = gen_vfv.data # anchor generated from attribute
 
-        tsne_train_vf = input_vf.cpu()
-        tsne_gen_vf = gen_vf.cpu()
-
         anchor_vf = torch.cat((input_vf, gen_vf), 0)
         # index of anchor in all training visual features
         anchor_index = (input_index.repeat(1,2)).squeeze()
@@ -326,6 +312,7 @@ for epoch in range(opt.nepoch):
             # consistency loss
             train_hf = netF(Variable(input_vf))
             gen_hf = netF(Variable(gen_vf))
+            #? 应该采用类似球形的损失
             consistency_loss = euc_criterion(train_hf, gen_hf)
             consistency_loss = consistency_loss.mean()
             consistency_loss.backward(retain_graph=True)
@@ -334,8 +321,6 @@ for epoch in range(opt.nepoch):
             F_cost = triplet_loss + consistency_loss
             optimizerF.step()
 
-        tsne_train_hf = train_hf.data.cpu()
-        tsne_gen_hf = gen_hf.data.cpu()
 #------------------------------------------------------------------------------#
 
         ################################
@@ -344,9 +329,9 @@ for epoch in range(opt.nepoch):
         netR.zero_grad()
 
         #!!! VER: train R with generated visual features
-        syn_attv = netR(gen_vfv)
-        R_cost = cos_criterion(syn_attv, input_attv)
-        R_cost = R_cost.mean()
+        # syn_attv = netR(gen_vfv)
+        # R_cost = cos_criterion(syn_attv, input_attv)
+        # R_cost = R_cost.mean()
 
         #!!! VER: train R with generated vf and train vf
         # gen_syn_attv = netR(gen_vfv) 
@@ -358,15 +343,15 @@ for epoch in range(opt.nepoch):
         # R_cost = R_cost.mean()
 
         #!!! VER: train R with hidden features generated by F
-        # r_train_vfv = torch.cat((input_vfv, gen_vfv), 0)
-        # r_train_hfv = netF(r_train_vfv)
+        # R training
+        syn_train_attv = netR(train_hf)
+        syn_gen_attv = netR(gen_hf)
 
-        # # R training
-        # syn_attv = netR(r_train_hfv)
-
-        # # loss of R
-        # R_cost = cos_criterion(syn_attv, input_attv.repeat(2,1))
-        # R_cost = R_cost.mean()
+        # attribute consistency loss
+        err_syn_train = cos_criterion(syn_train_attv, input_attv)
+        err_syn_gen = cos_criterion(syn_gen_attv, input_attv)
+        R_cost = err_syn_train + err_syn_gen
+        R_cost = R_cost.mean()
 
         #!!! Update R net
         R_cost.backward(mone, retain_graph=True)
@@ -374,14 +359,14 @@ for epoch in range(opt.nepoch):
 
 #------------------------------------------------------------------------------#
 
-        ################################
         # FINAL GENERATOR LOSS
-        ################################
         #!!! 最后的G损失一定要有G_cost和R_cost
         #? 是否要包含F网络的consistency_loss
         errG = G_cost - opt.r_weight * R_cost
         errG.backward()
         optimizerG.step()
+
+#------------------------------------------------------------------------------#
 
     netG.eval()
 
@@ -395,27 +380,32 @@ for epoch in range(opt.nepoch):
         # train final classifier and evaluate model
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H])
+        # data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H])
 
         print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
         if cls_.H > max_H:
             max_H = cls_.H 
             corresponding_epoch = epoch
-            # tsne malipulation when get best result
-            tsne_train_vf_embed = TSNE(n_components=2).fit_transform(tsne_train_vf.numpy())
-            tsne_gen_vf_embed = TSNE(n_components=2).fit_transform(tsne_gen_vf.numpy())
-            tsne_train_hf_embed = TSNE(n_components=2).fit_transform(tsne_train_hf.numpy())
-            tsne_gen_hf_embed = TSNE(n_components=2).fit_transform(tsne_gen_hf.numpy())
+
+            # tsne when get best result
+            tsne_train_vf_embed = TSNE(n_components=3).fit_transform(input_vf.cpu().numpy())
+            tsne_gen_vf_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
+            tsne_train_hf_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
+            tsne_gen_hf_embed = TSNE(n_components=3).fit_transform(gen_hf.data.cpu().numpy())
             tsne_label = (input_label.cpu()).numpy()
+
+            tsne_att_embed = TSNE(n_components=3).fit_transform(input_att.cpu().numpy())
+            tsne_train_gen_att_embed = TSNE(n_components=3).fit_transform((syn_train_attv.data).cpu().numpy())
+            tsne_gen_gen_att_embed = TSNE(n_components=3).fit_transform((syn_gen_attv.data).cpu().numpy())
 
     else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
 
-        data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc])
-
         cls_ = classifier2.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
+
+        # data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc])
 
         print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
 
@@ -428,47 +418,15 @@ if opt.gzsl:
 else:
     print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch+1))
 
-# COST & DIS
-figure1 = plt.figure(num=1, tight_layout=True)
+# save visualization data
+root = '/home/xingyun/docker/mmcgan_torch030/figure/frwgan/for_test/' + opt.dataset
 
-x = np.arange(1, opt.nepoch+1)
-data_to_plot = np.array(data_to_plot)
+np.save(file=root+'/label', arr=tsne_label)
+np.save(file=root+'/train_vf_embed', arr=tsne_train_vf_embed)
+np.save(file=root+'/gen_vf_embed', arr=tsne_gen_vf_embed)
+np.save(file=root+'/train_hf_embed', arr=tsne_train_hf_embed)
+np.save(file=root+'/gen_hf_embed', arr=tsne_gen_hf_embed)
 
-ax1 = figure1.add_subplot(221)
-ax1.plot(x, data_to_plot[:,0], label='Discriminator')
-ax1.plot(x, data_to_plot[:,1], label='Generator')
-ax1.plot(x, data_to_plot[:,2], label='Rverse Net')
-
-ax2 = figure1.add_subplot(222)
-ax2.plot(x, data_to_plot[:,3], label='wasserstein distance')
-
-ax3 = figure1.add_subplot(212)
-ax3.plot(x, data_to_plot[:,4], label='unseen class acc')
-ax3.plot(x, data_to_plot[:,5], label='seen class acc')
-ax3.plot(x, data_to_plot[:,6], label='h')
-
-# save figure
-# plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/cost/' + opt.dataset + '_cost.pdf')
-plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/cost/' + opt.dataset + '_cost_test.pdf')
-
-# TSNE
-figure2 = plt.figure(num=2, tight_layout=True)
-
-ax1 = figure2.add_subplot(221)
-ax1.set_title('train_vf_embed')
-ax1.scatter(tsne_train_vf_embed[:,0], tsne_train_vf_embed[:,1], s=20, c=tsne_label, marker='o', cmap=plt.cm.Spectral)
-
-ax2 = figure2.add_subplot(222, sharex=ax1)
-ax2.set_title('gen_vf_embed')
-ax2.scatter(tsne_gen_vf_embed[:,0], tsne_gen_vf_embed[:,1], s=20, c=tsne_label, marker='o', cmap=plt.cm.Spectral)
-
-ax3 = figure2.add_subplot(223, sharex=ax1)
-ax3.set_title('train_hf_embed')
-ax3.scatter(tsne_train_hf_embed[:,0], tsne_train_hf_embed[:,1], s=20, c=tsne_label, marker='o', cmap=plt.cm.Spectral)
-
-ax4 = figure2.add_subplot(224, sharex=ax1)
-ax4.set_title('gen_hf_embed')
-ax4.scatter(tsne_gen_hf_embed[:,0], tsne_gen_hf_embed[:,1], s=20, c=tsne_label, marker='o', cmap=plt.cm.Spectral)
-
-# plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/tsne/'+ opt.dataset+'_tsne.pdf')
-plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/tsne/'+ opt.dataset+'_tsne_test.pdf')
+np.save(file=root+'/att_embed', arr=tsne_att_embed)
+np.save(file=root+'/train_gen_att_embed', arr=tsne_train_gen_att_embed)
+np.save(file=root+'/gen_gen_att_embed', arr=tsne_gen_gen_att_embed)

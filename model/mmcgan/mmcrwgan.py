@@ -15,8 +15,8 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utilities import opts, util
-from utilities import classifier, mm_classifier, mlp
+from util import opts, tools, mlp
+from util.classifier import classifier, mm_classifier
 
 opt = opts.parse()
 print(opt)
@@ -43,7 +43,7 @@ if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 # load datasets
-data = util.DATA_LOADER(opt)
+data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
 # initialize neural nets
@@ -100,7 +100,7 @@ def sample():
 
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
-    input_label.copy_(util.map_label(batch_label, data.seenclasses))
+    input_label.copy_(tools.map_label(batch_label, data.seenclasses))
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
@@ -284,7 +284,7 @@ for epoch in range(opt.nepoch):
 
         data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc])
 
-        cls_ = mm_classifier.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
+        cls_ = mm_classifier.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
         print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))

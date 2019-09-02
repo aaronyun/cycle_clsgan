@@ -6,6 +6,7 @@ import random
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as tfunc
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
@@ -14,10 +15,9 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utilities import opts, util
-from utilities import classifier, mm_classifier, mlp
+from util import opts, tools, mlp
+from util.classifier import classifier, mm_classifier
 
-# parameters
 opt = opts.parse()
 print(opt)
 
@@ -43,22 +43,20 @@ if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 # load datasets
-data = util.DATA_LOADER(opt)
+data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
-# Generator initialize
+# initialize neural nets
 netG = mlp.MLP_G(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
-# Discriminator initialize
 netD = mlp.MLP_CRITIC(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-# Reverse net initialize
 if opt.r_hl == 1:
     netR = mlp.MLP_1HL_Dropout_R(opt)
 elif opt.r_hl == 2:
@@ -71,13 +69,12 @@ else:
     raise('wrong value of r_hl')
 print(netR)
 
-# Fusion net initialize
-netF = mlp.MLP_Dropout_Fusion(opt)
+# semantic feature consistency loss
+r_criterion = nn.CosineSimilarity()
+# r_criterion = nn.PairwiseDistance()
 
-# semantic consistency loss
-cos_criterion = nn.CosineSimilarity()
-# fusion loss
-triplet_criterion = nn.TripletMarginLoss(margin=1.0, p=2)
+# classification loss, Equation (4) of the paper
+cls_criterion = nn.NLLLoss()
 
 # create input tensor
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
@@ -92,23 +89,22 @@ if opt.cuda:
     netD.cuda()
     netG.cuda()
     netR.cuda()
-    netF.cuda()
 
     noise, input_res, input_att, input_label  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda()
 
-    cos_criterion = cos_criterion.cuda()
-    triplet_criterion = triplet_criterion.cuda()
+    r_criterion = r_criterion.cuda()
+    cls_criterion = cls_criterion.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
 
 # auxiliary functions
 def sample():
-    batch_feature, batch_label, batch_att, batch_index = data.next_batch(opt.batch_size)
+    batch_feature, batch_label, batch_att = data.next_batch(opt.batch_size)
 
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
-    input_label.copy_(util.map_label(batch_label, data.seenclasses))
+    input_label.copy_(tools.map_label(batch_label, data.seenclasses))
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
@@ -167,12 +163,18 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerF = optim.Adam(netF.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+
+# train a classifier on seen classes
+pretrain_cls = classifier.CLASSIFIER(data.train_feature, tools.map_label(data.train_label, data.seenclasses), data.seenclasses.size(0), opt.resSize, opt.cuda, 0.001, 0.5, 50, 100, opt.pretrain_classifier)
 
 # store best result and corresponding epoch
 max_H = 0.0
 max_acc = 0.0
 corresponding_epoch = 0
+
+# freeze the classifier during the optimization
+for p in pretrain_cls.model.parameters():
+    p.requires_grad = False
 
 # preperation for visualization
 data_to_plot = []
@@ -188,12 +190,12 @@ for epoch in range(opt.nepoch):
         # DISCRIMINATOR TRAINING
         ################################
         for p in netD.parameters():
-            p.requires_grad = True # set to False after netD training
+            p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
+            sample()
             netD.zero_grad()
 
-            sample()
             input_resv = Variable(input_res)
             input_attv = Variable(input_att)
 
@@ -202,12 +204,11 @@ for epoch in range(opt.nepoch):
             criticD_real = criticD_real.mean()
             criticD_real.backward(mone)
 
-            # generate fake visual feature
+            # train D with generated data
             noise.normal_(0, 1)
             noisev = Variable(noise)
             fake = netG(noisev, input_attv)
 
-            # train D with generated data
             criticD_fake = netD(fake.detach(), input_attv)
             criticD_fake = criticD_fake.mean()
             criticD_fake.backward(one)
@@ -216,116 +217,67 @@ for epoch in range(opt.nepoch):
             gradient_penalty = calc_gradient_penalty(netD, input_res, fake.data, input_attv)
             gradient_penalty.backward()
 
-            # wasserstein distance
             Wasserstein_D = criticD_real - criticD_fake
-
-            # discriminator loss
             D_cost = criticD_fake - criticD_real + gradient_penalty
             optimizerD.step()
-
-        for p in netD.parameters():
-            p.requires_grad = False # avoid computation
 
         ############################
         # GENERATOR TRAINING
         ###########################
-        netG.zero_grad()
+        for p in netD.parameters():
+            p.requires_grad = False # avoid computation
 
         sample()
-        input_vfv = Variable(input_res)
-        input_attv = Variable(input_att)
+        netG.zero_grad()
 
         # generate fake data
         noise.normal_(0, 1)
         noisev = Variable(noise)
-        gen_vfv = netG(noisev, input_attv)
+        input_attv = Variable(input_att)
+        fake_vf = netG(noisev, input_attv)
 
-        criticG_fake = netD(gen_vfv, input_attv)
+        criticG_fake = netD(fake_vf, input_attv)
         criticG_fake = criticG_fake.mean()
 
         G_cost = -criticG_fake
 
         ################################
-        # FEATURE FUSION TRAINING
-        ################################
-        # Data Preperation
-        train_vf = input_vfv.data # anchor from training data
-        gen_vf = gen_vfv.data # anchor generated from attribute
-        anchor_vf = torch.cat((train_vf, gen_vf), 0)
-        anchor_index = batch_index.repeat(1,2)
-
-        triple_data = util.Triple_Selector(data, anchor_vf, anchor_index) # triple selector
-
-        # Training
-        for iter_f in range(opt.fusion_iter):
-            netF.zero_grad()
-
-            # train F Net with triple of train and generated visual feature
-            mixing_triple_batch = triple_data.next_batch(opt.triple_batch_size, triple_type='hardest') # get a batch of mixing triples
-            mixing_triple_batchv = Variable(mixing_triple_batch)
-            mixing_hf = netF(mixing_triple_batchv)
-
-            # triplet loss
-            anchor = mixing_hf[0 : opt.triple_batch_size]
-            pos = mixing_hf[opt.triple_batch_size : opt.triple_batch_size*2]
-            neg = mixing_hf[opt.triple_batch_size*2 : opt.triple_batch_size*3]
-
-            triplet_loss = triplet_criterion(anchor, pos, neg, margin=1.0)
-            triplet_loss = triplet_loss.mean()
-            triplet_loss.backward(retain_graph=True)
-
-            # consistency loss
-            train_hf = netF(train_vf)
-            gen_hf = netF(gen_vf)
-            consistency_loss = cos_criterion(train_hf, gen_hf)
-            consistency_loss = consistency_loss.mean()
-            consistency_loss.backward(retain_graph=True)
-
-            # update parameters
-            F_cost = triplet_loss + consistency_loss
-            optimizerF.step()
-
-        ################################
-        # R TRAINING
+        # R TRAINING 
         ################################
         netR.zero_grad()
 
-        # data to train R
-        train_hfv = netF(input_vfv)
-        gen_hfv = netF(gen_vfv)
+        syn_att = netR(fake_vf)
 
-        # R training
-        syn_gen_attv = netR(gen_hfv)
-        syn_train_attv = netR(train_hfv)
-
-        # loss of R
-        errR_train = cos_criterion(syn_train_attv, input_attv)
-        errR_gen = cos_criterion(syn_gen_attv, input_attv)
-        R_cost = err_train + err_gen
-        R_cost = R_cost.mean()
+        # caculate r loss with predefined loss function
+        errR = r_criterion(syn_att, input_attv)
+        R_cost = errR.mean() # close to 1
 
         R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
 
-        ################################
+        # classification loss
+        c_errG = cls_criterion(pretrain_cls.model(fake), Variable(input_label))
+
         # FINAL GENERATOR LOSS
-        ################################
-        errG = G_cost - opt.r_weight * R_cost
+        errG = G_cost - opt.r_weight * R_cost + opt.cls_weight * c_errG
         errG.backward()
         optimizerG.step()
 
     netG.eval()
 
     if opt.gzsl:
+        # generate visual feature for unseen classes with generator
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
         syn_att = netR(Variable(syn_feature.cuda(), volatile=True))
+        # train visual feature and attribute generated by netR
         train_feature, train_label = data.train_feature, data.train_label
         train_att = netR(Variable(train_feature.cuda(), volatile=True))
 
+        # concatenate visual feature with attribute
         vf = torch.cat((data.train_feature, syn_feature), 0)
         att = torch.cat((train_att.data.cpu(), syn_att.data.cpu()), 0)
 
-        # concatenate visual feature and attribute
+        # data to train classifier
         train_X = torch.cat((vf, att), 1)
         train_Y = torch.cat((train_label, syn_label), 0)
         nclass = opt.nclass_all
@@ -346,7 +298,7 @@ for epoch in range(opt.nepoch):
 
         data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc])
 
-        cls_ = mm_classifier.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
+        cls_ = mm_classifier.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
         print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
@@ -384,4 +336,4 @@ data_to_plot = np.array(data_to_plot)
 # plt.plot(x, data_to_plot[:,5], 'k', label='seen class acc')
 
 # save figure
-# plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/' + opt.dataset + 'cost_fig.pdf')
+#  plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/' + opt.dataset + 'cost_fig.pdf')

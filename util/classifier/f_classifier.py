@@ -1,12 +1,14 @@
+import sys
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.optim as optim
+
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler 
-import sys
 
-from utilities import util
+from util import tools
 
 class CLASSIFIER:
     # train_Y is interger 

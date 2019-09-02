@@ -1,7 +1,8 @@
-from utilities import util, opts
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
+from util import tools, opts
 
 opt = opts.parse()
 data = util.DATA_LOADER(opt)

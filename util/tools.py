@@ -1,5 +1,3 @@
-#!/usr/bin/python3.7
-
 import random
 
 import torch

@@ -2,12 +2,12 @@ import os
 import shlex
 import subprocess
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 
 # exp_set = '/zsl'
 exp_set = '/gzsl'
 
-# model_type = '/clswgan'
+model_type = '/clswgan'
 # model_type = '/wgan'
 # model_type = '/rwgan'
 # model_type = '/dwgan'
@@ -19,16 +19,16 @@ exp_set = '/gzsl'
 # model_type = '/rawgan'
 # model_type = '/mmc_rclswgan'
 # model_type = '/mmcfrwgan'
-model_type = '/frwgan'
+# model_type = '/frwgan'
 
-# exp_type = '/base'
+exp_type = '/base'
 # exp_type = '/best'
 # exp_type = '/for_test'
 # exp_type = '/tsne'
-exp_type = '/e4_rwgan_with_F'
+# exp_type = '/e4_rwgan_with_F'
 
-datasets = ['/APY', '/AWA1', '/AWA2', '/CUB', '/FLO', '/SUN']
-# datasets = ['/CUB']
+# datasets = ['/APY', '/AWA1', '/AWA2', '/CUB', '/FLO', '/SUN']
+datasets = ['/CUB']
 
 print('\n')
 print("########## EXPERIMENT SETTING: %s ##########" % exp_set)
@@ -54,8 +54,8 @@ for dataset in datasets:
             print('----------')
             print('%s #Begin!#' % file_path)
             print('----------')
-            subprocess.run(args, stdout=result_f)
-            # subprocess.run(args)
+            # subprocess.run(args, stdout=result_f)
+            subprocess.run(args)
             print('----------')
             print('%s #Done!#' % file_path)
             print('----------')

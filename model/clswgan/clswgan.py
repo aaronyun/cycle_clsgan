@@ -1,22 +1,18 @@
 from __future__ import print_function
 
 import os
-import argparse
 import random
+import argparse
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as tfunc
+import torch.nn as nn 
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
-import matplotlib.pyplot as plt
-import numpy as np
-
-from utilities import opts, util
-from utilities import classifier, mm_classifier, mlp
+from util import tools, mlp, opts
+from util.classifier import classifier, classifier2
 
 opt = opts.parse()
 print(opt)
@@ -26,7 +22,7 @@ try:
 except OSError:
     pass
 
-# initialize internal state
+# intialize internal state
 if opt.manualSeed is None:
     opt.manualSeed = random.randint(1, 10000)
 print("Random Seed: ", opt.manualSeed)
@@ -42,11 +38,11 @@ cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-# load datasets
-data = util.DATA_LOADER(opt)
+# load dataset
+data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
-# initialize neural nets
+# initialize generator and discriminator
 netG = mlp.MLP_G(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
@@ -56,22 +52,6 @@ netD = mlp.MLP_CRITIC(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
-
-if opt.r_hl == 1:
-    netR = mlp.MLP_1HL_Dropout_R(opt)
-elif opt.r_hl == 2:
-    netR = mlp.MLP_2HL_Dropout_R(opt)
-elif opt.r_hl == 3:
-    netR = mlp.MLP_3HL_Dropout_R(opt)
-elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_R(opt)
-else:
-    raise('wrong value of r_hl')
-print(netR)
-
-# semantic feature consistency loss
-r_criterion = nn.CosineSimilarity()
-# r_criterion = nn.PairwiseDistance()
 
 # classification loss, Equation (4) of the paper
 cls_criterion = nn.NLLLoss()
@@ -88,12 +68,11 @@ mone = one * -1
 if opt.cuda:
     netD.cuda()
     netG.cuda()
-    netR.cuda()
 
-    noise, input_res, input_att, input_label  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda()
+    noise = noise.cuda()
+    input_res, input_att, input_label = input_res.cuda(), input_att.cuda(), input_label.cuda()
 
-    r_criterion = r_criterion.cuda()
-    cls_criterion = cls_criterion.cuda()
+    cls_criterion.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
@@ -104,47 +83,41 @@ def sample():
 
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
-    input_label.copy_(util.map_label(batch_label, data.seenclasses))
+    input_label.copy_(tools.map_label(batch_label, data.seenclasses))
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
-
     syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
     syn_label = torch.LongTensor(nclass*num) 
     syn_att = torch.FloatTensor(num, opt.attSize)
     syn_noise = torch.FloatTensor(num, opt.nz)
-
     if opt.cuda:
         syn_att = syn_att.cuda()
         syn_noise = syn_noise.cuda()
-
+        
     for i in range(nclass):
         iclass = classes[i]
         iclass_att = attribute[iclass]
-
-        # temp = iclass_att.clone()
-        # temp = temp.repeat(num, 1)
-        # syn_att.copy_(temp)
         syn_att.copy_(iclass_att.repeat(num, 1))
-
-        # generate visual feature
         syn_noise.normal_(0, 1)
-        output = netG(Variable(syn_noise, requires_grad=False), Variable(syn_att, requires_grad=False))
-
+        output = netG(Variable(syn_noise, volatile=True), Variable(syn_att, volatile=True))
         syn_feature.narrow(0, i*num, num).copy_(output.data.cpu())
         syn_label.narrow(0, i*num, num).fill_(iclass)
 
     return syn_feature, syn_label
 
 def calc_gradient_penalty(netD, real_data, fake_data, input_att):
+    #print real_data.size()
     alpha = torch.rand(opt.batch_size, 1)
     alpha = alpha.expand(real_data.size())
     if opt.cuda:
         alpha = alpha.cuda()
 
     interpolates = alpha * real_data + ((1 - alpha) * fake_data)
+
     if opt.cuda:
         interpolates = interpolates.cuda()
+
     interpolates = Variable(interpolates, requires_grad=True)
 
     disc_interpolates = netD(interpolates, input_att)
@@ -162,33 +135,29 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-
-# train a classifier on seen classes
-pretrain_cls = classifier.CLASSIFIER(data.train_feature, util.map_label(data.train_label, data.seenclasses), data.seenclasses.size(0), opt.resSize, opt.cuda, 0.001, 0.5, 50, 100, opt.pretrain_classifier)
+    
+# train a classifier on seen classes, obtain \theta of Equation (4)
+pretrain_cls = classifier.CLASSIFIER(data.train_feature, tools.map_label(data.train_label, data.seenclasses), data.seenclasses.size(0), opt.resSize, opt.cuda, 0.001, 0.5, 50, 100, opt.pretrain_classifier)
 
 # store best result and corresponding epoch
-max_H = 0.0
-max_acc = 0.0
+max_H = 0
+max_acc = 0
 corresponding_epoch = 0
 
 # freeze the classifier during the optimization
 for p in pretrain_cls.model.parameters():
     p.requires_grad = False
 
-# preperation for visualization
-data_to_plot = []
-
 if opt.gzsl:
-    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |  ACC_seen  |    H    |')
+    print('EPOCH          |  D_cost  |  G_cost  |  CLS_cost  |  Wasserstein_D  |  ACC_seen  |  ACC_unseen  |    H    |')
 else:
-    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |')
+    print('EPOCH          |  D_cost  |  G_cost  |  CLS_cost  |  Wasserstein_D  |  ACC_unseen  |')
 
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
-        ################################
+        ############################
         # DISCRIMINATOR TRAINING
-        ################################
+        ###########################
         for p in netD.parameters():
             p.requires_grad = True # they are set to False below in netG update
 
@@ -227,113 +196,57 @@ for epoch in range(opt.nepoch):
         for p in netD.parameters():
             p.requires_grad = False # avoid computation
 
-        sample()
         netG.zero_grad()
 
         # generate fake data
+        input_attv = Variable(input_att)
         noise.normal_(0, 1)
         noisev = Variable(noise)
-        input_attv = Variable(input_att)
-        fake_vf = netG(noisev, input_attv)
+        fake = netG(noisev, input_attv)
 
-        criticG_fake = netD(fake_vf, input_attv)
+        criticG_fake = netD(fake, input_attv)
         criticG_fake = criticG_fake.mean()
 
         G_cost = -criticG_fake
 
-        ################################
-        # R TRAINING 
-        ################################
-        netR.zero_grad()
-
-        syn_att = netR(fake_vf)
-
-        # caculate r loss with predefined loss function
-        errR = r_criterion(syn_att, input_attv)
-        R_cost = errR.mean() # close to 1
-
-        R_cost.backward(mone, retain_graph=True)
-        optimizerR.step()
-
         # classification loss
         c_errG = cls_criterion(pretrain_cls.model(fake), Variable(input_label))
 
-        # FINAL GENERATOR LOSS
-        errG = G_cost - opt.r_weight * R_cost + opt.cls_weight * c_errG
+        errG = G_cost + opt.cls_weight * c_errG
         errG.backward()
         optimizerG.step()
 
-    netG.eval()
+    netG.eval() # evaluate the model, set G to evaluation mode
 
     if opt.gzsl:
-        # generate visual feature for unseen classes with generator
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
-        syn_att = netR(Variable(syn_feature.cuda(), volatile=True))
-        # train visual feature and attribute generated by netR
-        train_feature, train_label = data.train_feature, data.train_label
-        train_att = netR(Variable(train_feature.cuda(), volatile=True))
 
-        # concatenate visual feature with attribute
-        vf = torch.cat((data.train_feature, syn_feature), 0)
-        att = torch.cat((train_att.data.cpu(), syn_att.data.cpu()), 0)
-
-        # data to train classifier
-        train_X = torch.cat((vf, att), 1)
-        train_Y = torch.cat((train_label, syn_label), 0)
+        train_X = torch.cat((data.train_feature, syn_feature), 0)
+        train_Y = torch.cat((data.train_label, syn_label), 0)
         nclass = opt.nclass_all
 
-        # train final classifier and evaluate model
-        cls_ = mm_classifier.CLASSIFIER(netR, train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
+        cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H])
-
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
         if cls_.H > max_H:
-            max_H = cls_.H 
+            max_H = cls_.H
             corresponding_epoch = epoch
     else:
-        syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
-        syn_att = torch.index_select(data.attribute, 0, syn_label)
+        syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num) 
 
-        data_to_plot.append([D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc])
-
-        cls_ = mm_classifier.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
+        cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], acc))
 
         if acc > max_acc:
             max_acc = acc
             corresponding_epoch = epoch
 
-    netG.train()
+    netG.train() # reset G to training mode
 
 if opt.gzsl:
     print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
 else:
     print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch+1))
-
-# visualization
-x = np.arange(1, opt.nepoch+1)
-data_to_plot = np.array(data_to_plot)
-
-# plt.subplot(311)
-# plt.plot(x, data_to_plot[:,0], label='Discriminator')
-# plt.plot(x, data_to_plot[:,1], label='Generator')
-# plt.plot(x, data_to_plot[:,2], label='Rverse Net')
-
-# plt.subplot(312)
-# plt.plot(x, data_to_plot[:,4], label='unseen class acc')
-# plt.plot(x, data_to_plot[:,5], label='seen class acc')
-# plt.plot(x, data_to_plot[:,6], label='h')
-
-# plt.subplot(313)
-# plt.plot(x, data_to_plot[:,3], label='wasserstein distance')
-
-# only plot unseen acc and seen acc
-# plt.plot(x, data_to_plot[:,4], 'r', label='unseen class acc')
-# plt.plot(x, data_to_plot[:,5], 'k', label='seen class acc')
-
-# save figure
-#  plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/' + opt.dataset + 'cost_fig.pdf')

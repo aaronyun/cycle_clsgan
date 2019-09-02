@@ -1,35 +1,53 @@
-import torch
-import torch.nn as nn
-from torch.autograd import Variable
-import torch.optim as optim
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler 
 import sys
 
-from utilities import util
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.autograd import Variable
+from torch.autograd import Variable
+
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler 
+
+from util import tools
 
 class CLASSIFIER:
     # train_Y is interger 
-    def __init__(self, _train_X, _train_Y, data_loader, _nclass, _cuda, _lr=0.001, _beta1=0.5, _nepoch=20, _batch_size=100, generalized=True):
+    def __init__(self, netR,  _train_X, _train_Y, data_loader, _nclass, _cuda, _lr=0.001, _beta1=0.5, _nepoch=20, _batch_size=100, generalized=True):
+        self.cuda = _cuda
 
-        self.train_X =  _train_X 
-        self.train_Y = _train_Y 
+        self.train_X =  _train_X
+        self.train_Y = _train_Y
 
         # test seen data
         self.test_seen_feature = data_loader.test_seen_feature
-        self.test_seen_label = data_loader.test_seen_label 
-        self.seenclasses = data_loader.seenclasses
+        self.test_seen_label = data_loader.test_seen_label
+        # self.test_seen_att = data_loader.attribute[self.test_seen_label]
+        if self.cuda:
+            self.test_seen_att = netR(Variable(self.test_seen_feature.cuda(), volatile=True))
+        else:
+            self.test_seen_att = netR(Variable(self.test_seen_feature, volatile=True))
 
         # test unseen data
         self.test_unseen_feature = data_loader.test_unseen_feature
-        self.test_unseen_label = data_loader.test_unseen_label 
+        self.test_unseen_label = data_loader.test_unseen_label
+        if self.cuda:
+            self.test_unseen_att = netR(Variable(self.test_unseen_feature.cuda(), volatile=True))
+        else:
+            self.test_unseen_att = netR(Variable(self.test_unseen_feature, volatile=True))
+
+        # DATA FOR EVALUATE MODEL
+        self.test_seen = torch.cat((self.test_seen_feature, self.test_seen_att.data.cpu()), 1)
+        self.test_unseen = torch.cat((self.test_unseen_feature, self.test_unseen_att.data.cpu()), 1)
+        self.seenclasses = data_loader.seenclasses
         self.unseenclasses = data_loader.unseenclasses
 
-        self.batch_size = _batch_size # equals to syn_num
-        self.nepoch = _nepoch
         self.nclass = _nclass
+        self.ntrain = self.train_X.size(0)
         self.input_dim = _train_X.size(1)
-        self.cuda = _cuda
+
+        self.nepoch = _nepoch
+        self.batch_size = _batch_size # equals to syn_num
         self.lr = _lr
         self.beta1 = _beta1
 
@@ -49,7 +67,6 @@ class CLASSIFIER:
 
         self.index_in_epoch = 0
         self.epochs_completed = 0
-        self.ntrain = self.train_X.size()[0]
 
         if generalized:
             self.acc_seen, self.acc_unseen, self.H = self.fit_gzsl()
@@ -116,7 +133,7 @@ class CLASSIFIER:
         for epoch in range(self.nepoch):
             for i in range(0, self.ntrain, self.batch_size):      
                 self.model.zero_grad()
-                batch_input, batch_label = self.next_batch(self.batch_size) 
+                batch_input, batch_label = self.next_batch(self.batch_size)
                 self.input.copy_(batch_input)
                 self.label.copy_(batch_label)
 
@@ -126,17 +143,20 @@ class CLASSIFIER:
                 loss = self.criterion(output, labelv)
                 loss.backward()
                 self.optimizer.step()
-                #print('Training classifier loss= ', loss.data[0])
+                # print('Training classifier loss= ', loss.data[0])
+
+            # evaluate model every epoch
             acc_seen = 0
             acc_unseen = 0
-            acc_seen = self.val_gzsl(self.test_seen_feature, self.test_seen_label, self.seenclasses)
-            acc_unseen = self.val_gzsl(self.test_unseen_feature, self.test_unseen_label, self.unseenclasses)
+            acc_seen = self.val_gzsl(self.test_seen, self.test_seen_label, self.seenclasses)
+            acc_unseen = self.val_gzsl(self.test_unseen, self.test_unseen_label, self.unseenclasses)
             H = 2*acc_seen*acc_unseen / (acc_seen+acc_unseen)
-            #print('acc_seen=%.4f, acc_unseen=%.4f, h=%.4f' % (acc_seen, acc_unseen, H))
+            # print('acc_seen=%.4f, acc_unseen=%.4f, h=%.4f' % (acc_seen, acc_unseen, H))
             if H > best_H:
                 best_seen = acc_seen
                 best_unseen = acc_unseen
                 best_H = H
+
         return best_seen, best_unseen, best_H
 
     def val_gzsl(self, test_X, test_label, target_classes): 
@@ -202,10 +222,20 @@ class CLASSIFIER:
 class LINEAR_LOGSOFTMAX(nn.Module):
     def __init__(self, input_dim, nclass):
         super(LINEAR_LOGSOFTMAX, self).__init__()
-        self.fc = nn.Linear(input_dim, nclass)
+        self.fc1 = nn.Linear(input_dim, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, nclass)
+        self.lrelu = nn.LeakyReLU(0.2, True)
         self.logic = nn.LogSoftmax(dim=1)
 
     def forward(self, x): 
-        h = self.fc(x)
+        h = self.fc1(x)
+        h = self.lrelu(h)
+
+        h = self.fc2(h)
+        h = self.lrelu(h)
+
+        h = self.fc3(h)
         h = self.logic(h)
+
         return h

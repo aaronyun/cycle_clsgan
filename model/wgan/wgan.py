@@ -5,14 +5,14 @@ import random
 import argparse
 
 import torch
-import torch.nn as nn 
+import torch.nn as nn
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
-from utilities import util, mlp, opts
-from utilities import classifier, classifier2
+from util import tools, mlp, opts
+from util.classifier import classifier, classifier2
 
 opt = opts.parse()
 print(opt)
@@ -39,7 +39,7 @@ if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 # load dataset
-data = util.DATA_LOADER(opt)
+data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
 # initialize generator and discriminator
@@ -52,9 +52,6 @@ netD = mlp.MLP_CRITIC(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
-
-# classification loss, Equation (4) of the paper
-cls_criterion = nn.NLLLoss()
 
 # create input tensor
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
@@ -72,18 +69,15 @@ if opt.cuda:
     noise = noise.cuda()
     input_res, input_att, input_label = input_res.cuda(), input_att.cuda(), input_label.cuda()
 
-    cls_criterion.cuda()
-
     one = one.cuda()
     mone = mone.cuda()
 
-# auxiliary functions
 def sample():
     batch_feature, batch_label, batch_att = data.next_batch(opt.batch_size)
 
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
-    input_label.copy_(util.map_label(batch_label, data.seenclasses))
+    input_label.copy_(tools.map_label(batch_label, data.seenclasses))
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
@@ -135,23 +129,16 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 # setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-    
-# train a classifier on seen classes, obtain \theta of Equation (4)
-pretrain_cls = classifier.CLASSIFIER(data.train_feature, util.map_label(data.train_label, data.seenclasses), data.seenclasses.size(0), opt.resSize, opt.cuda, 0.001, 0.5, 50, 100, opt.pretrain_classifier)
 
 # store best result and corresponding epoch
 max_H = 0
 max_acc = 0
 corresponding_epoch = 0
 
-# freeze the classifier during the optimization
-for p in pretrain_cls.model.parameters():
-    p.requires_grad = False
-
 if opt.gzsl:
-    print('EPOCH          |  D_cost  |  G_cost  |  CLS_cost  |  Wasserstein_D  |  ACC_seen  |  ACC_unseen  |    H    |')
+    print('EPOCH          |  D_cost  |  G_cost  |  Wasserstein_D  |  ACC_seen  |  ACC_unseen  |    H    |')
 else:
-    print('EPOCH          |  D_cost  |  G_cost  |  CLS_cost  |  Wasserstein_D  |  ACC_unseen  |')
+    print('EPOCH          |  D_cost  |  G_cost  |  Wasserstein_D  |  ACC_unseen  |')
 
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
@@ -209,10 +196,7 @@ for epoch in range(opt.nepoch):
 
         G_cost = -criticG_fake
 
-        # classification loss
-        c_errG = cls_criterion(pretrain_cls.model(fake), Variable(input_label))
-
-        errG = G_cost + opt.cls_weight * c_errG
+        errG = G_cost
         errG.backward()
         optimizerG.step()
 
@@ -227,7 +211,9 @@ for epoch in range(opt.nepoch):
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+
+        # print('unseen=%.4f, seen=%.4f, h=%.4f' % ())
 
         if cls_.H > max_H:
             max_H = cls_.H
@@ -235,10 +221,12 @@ for epoch in range(opt.nepoch):
     else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num) 
 
-        cls_ = classifier2.CLASSIFIER(syn_feature, util.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
+        cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^12.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], c_errG.data[0], Wasserstein_D.data[0], acc))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], acc))
+
+        # print('unseen class accuracy= ', acc)
 
         if acc > max_acc:
             max_acc = acc

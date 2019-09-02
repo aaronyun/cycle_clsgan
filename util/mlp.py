@@ -63,6 +63,7 @@ class MLP_G(nn.Module):
         return out_
 
 #------------------------------------------------------------------------------#
+# Original R Net which has input size of 2048
 class MLP_1HL_Dropout_R(nn.Module):
     def __init__(self, opt):
         super(MLP_1HL_Dropout_R, self).__init__()
@@ -155,10 +156,10 @@ class MLP_4HL_Dropout_R(nn.Module):
         return h
 
 #------------------------------------------------------------------------------#
-# R net to Adaption
-class GA_1HL_Dropout_R(nn.Module):
+# R net to Fusion with input size of opt.hfSize
+class MLP_1HL_Dropout_FR(nn.Module):
     def __init__(self, opt):
-        super(GA_1HL_Dropout_R, self).__init__()
+        super(MLP_1HL_Dropout_FR, self).__init__()
         self.fc1 = nn.Linear(opt.hfSize, opt.nrh1)
         self.fc2 = nn.Linear(opt.nrh1, opt.attSize)
 
@@ -176,9 +177,9 @@ class GA_1HL_Dropout_R(nn.Module):
 
         return _out
 
-class GA_2HL_Dropout_R(nn.Module):
+class MLP_2HL_Dropout_FR(nn.Module):
     def __init__(self, opt):
-        super(GA_2HL_Dropout_R, self).__init__()
+        super(MLP_2HL_Dropout_FR, self).__init__()
         self.fc1 = nn.Linear(opt.hfSize, opt.nrh1)
         self.fc2 = nn.Linear(opt.nrh1, opt.nrh2)
         self.fc3 = nn.Linear(opt.nrh2, opt.attSize)
@@ -199,9 +200,9 @@ class GA_2HL_Dropout_R(nn.Module):
 
         return _out
 
-class GA_3HL_Dropout_R(nn.Module):
+class MLP_3HL_Dropout_FR(nn.Module):
     def __init__(self, opt):
-        super(GA_3HL_Dropout_R, self).__init__()
+        super(MLP_3HL_Dropout_FR, self).__init__()
         self.fc1 = nn.Linear(opt.hfSize, opt.nrh1)
         self.fc2 = nn.Linear(opt.nrh1, opt.nrh2)
         self.fc3 = nn.Linear(opt.nrh2, opt.nrh3)
@@ -225,9 +226,9 @@ class GA_3HL_Dropout_R(nn.Module):
 
         return _out
 
-class GA_4HL_Dropout_R(nn.Module):
+class MLP_4HL_Dropout_FR(nn.Module):
     def __init__(self, opt):
-        super(GA_4HL_Dropout_R, self).__init__()
+        super(MLP_4HL_Dropout_FR, self).__init__()
         self.fc1 = nn.Linear(opt.hfSize, opt.nrh1)
         self.fc2 = nn.Linear(opt.nrh1, opt.nrh2)
         self.fc3 = nn.Linear(opt.nrh2, opt.nrh3)
@@ -422,9 +423,9 @@ class TF_judge(nn.Module):
 
 #------------------------------------------------------------------------------#
 
-class MLP_Dropout_Gather(nn.Module):
+class MLP_Dropout_Fusion(nn.Module):
     def __init__(self, opt):
-        super(MLP_Dropout_Gather, self).__init__()
+        super(MLP_Dropout_Fusion, self).__init__()
         self.fc1 = nn.Linear(opt.resSize, 1024)
         self.fc2 = nn.Linear(1024, opt.hfSize)
 
@@ -442,7 +443,7 @@ class MLP_Dropout_Gather(nn.Module):
         return _out
 
 #------------------------------------------------------------------------------#
-#! FOR TEST
+#TEST#
 class test_3_HL_R(nn.Module):
     def __init__(self, opt):
         super(test_3_HL_R, self).__init__()

@@ -1,5 +1,5 @@
 #------------------------------------------------------------------------------#
-# For visualization on local machine
+# For visualization on local
 #------------------------------------------------------------------------------#
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,14 +10,14 @@ exp_set = '\\gzsl'
 
 model = '\\frwgan'
 
-# exp_type= '\\e4_rwgan_with_F'
-exp_type= '\\base'
+exp_type= '\\e4_rwgan_with_F'
+# exp_type= '\\base'
 
-dataset= '\\APY'
+# dataset= '\\APY'
 # dataset= '\\AWA1'
 # dataset= '\\AWA2'
 # dataset= '\\CUB'
-# dataset= '\\FLo'
+dataset= '\\FLO'
 # dataset= '\\SUN'
 
 root = 'G:\\mmcgan_torch030\\fig' + exp_set + model + exp_type + dataset

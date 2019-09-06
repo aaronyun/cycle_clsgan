@@ -22,11 +22,18 @@ def parse():
     parser.add_argument('--resSize', type=int, default=2048)
     parser.add_argument('--attSize', type=int, default=85)
     parser.add_argument('--nclass_all', type=int, default=200, help='number of all classes')
+    parser.add_argument('--ntrain_class', type=int, default=40, help='number of train classes') #! NEW
 
     parser.add_argument('--preprocessing', action='store_true', default=False, help='enable MinMaxScaler on visual features')
     parser.add_argument('--validation', action='store_true', default=False, help='enable cross validation mode')
     parser.add_argument('--standardization', action='store_true', default=False)
     parser.add_argument('--val_every', type=int, default=10)
+
+#------------------------------------------------------------------------------#
+
+    # Adversarial Sample
+    parser.add_argument('--adv_steps', type=int, default=5)
+    parser.add_argument('--epsilon', type=float, default=0.0625)
 
 #------------------------------------------------------------------------------#
 
@@ -53,7 +60,7 @@ def parse():
 
     # Fusion Net Setting
     parser.add_argument('--hfSize', type=int, default=512, help='hidden feature size(final layer size of fusion net)')
-    parser.add_argument('--fusion_iter', type=int, default=3, help='how many times training fusion net in a epoch')
+    parser.add_argument('--fusion_iter', type=int, default=2, help='how many times training fusion net in a epoch')
     parser.add_argument('--triple_batch_size', type=int, default=128, help='batch size of Fusion Net training')
 
 #------------------------------------------------------------------------------#
@@ -78,8 +85,8 @@ def parse():
 #------------------------------------------------------------------------------#
 
     # Unknown
-    # parser.add_argument('--outname', help='folder to output data and model checkpoints')
-    # parser.add_argument('--outf', default='./checkpoint/', help='folder to output data and model checkpoints')
+    parser.add_argument('--outname', help='folder to output data and model checkpoints')
+    parser.add_argument('--outf', default='./checkpoint/', help='folder to output data and model checkpoints')
     parser.add_argument('--save_every', type=int, default=100)
     parser.add_argument('--print_every', type=int, default=1)
     parser.add_argument('--start_epoch', type=int, default=0)

@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import os
+import sys
 import argparse
 import random
 
@@ -14,6 +15,8 @@ from torch.autograd import Variable
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+sys.path.append('/home/xingyun/docker/mmcgan_torch030')
 
 from util import opts, tools, mlp
 from util.classifier import classifier, mm_classifier

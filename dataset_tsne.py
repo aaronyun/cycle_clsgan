@@ -1,3 +1,7 @@
+import sys
+
+sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D

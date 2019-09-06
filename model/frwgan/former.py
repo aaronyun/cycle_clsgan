@@ -3,6 +3,7 @@
 from __future__ import print_function
 
 import os
+import sys
 import argparse
 import random
 
@@ -18,8 +19,13 @@ from sklearn.manifold import TSNE
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
-from util import opts, tools, mlp
-from util.classifier import classifier, classifier2, f_classifier
+sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+
+from util import opts
+from util import tools
+from util import mlp
+from util.classifier import classifier
+from util.classifier import classifier2
 
 #------------------------------------------------------------------------------#
 
@@ -27,10 +33,10 @@ from util.classifier import classifier, classifier2, f_classifier
 opt = opts.parse()
 print(opt)
 
-# try:
-#     os.makedirs(opt.outf)
-# except OSError:
-#     pass
+try:
+    os.makedirs(opt.outf)
+except OSError:
+    pass
 
 #------------------------------------------------------------------------------#
 

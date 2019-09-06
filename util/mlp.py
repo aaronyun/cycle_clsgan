@@ -44,6 +44,28 @@ class MLP_D(nn.Module):
         h = self.sigmoid(self.fc2(h))
         return h
 
+class robDis(nn.Module):
+    def __init__(self, opt):
+        super(robDis, self).__init__()
+        self.fc1 = nn.Linear(opt.resSize+opt.attSize, opt.ndh)
+
+        self.bin = nn.Linear(opt.ndh, 1)
+        nn.init.xavier_uniform(self.bin.weight, gain=1.0)
+        self.multi = nn.Linear(opt.ndh, opt.ntrain_class)
+        nn.init.xavier_uniform(self.multi.weight, gain=1.0)
+
+        self.relu = nn.ReLU(True)
+
+    def forward(self, x, att):
+        _in = torch.cat((x, att), 1)
+        h = self.relu(self.fc1(_in))
+
+        _bin = self.bin(h)
+        _multi = self.multi(h)
+
+        return _bin.view(-1), _multi
+
+
 # GENERATOR
 class MLP_G(nn.Module):
     def __init__(self, opt):

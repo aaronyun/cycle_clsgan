@@ -1,10 +1,12 @@
+# -*- coding: utf-8 -*-
 #------------------------------------------------------------------------------#
-#TEST 先检查rwgan的生成效果：训练集的att生成的vf与训练集的vf之间的差异；用训练集生成的vf的聚类效果
+#TEST 先检查rwgan的生成效果：训练集的att生成的vf与训练集的vf之间的差异；用训练集生成的vf的聚类效果 
 #------------------------------------------------------------------------------#
 
 from __future__ import print_function
 
 import os
+import sys
 import argparse
 import random
 
@@ -17,6 +19,8 @@ import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
 import matplotlib.pyplot as plt
+
+sys.path.append('/home/xingyun/docker/mmcgan_torch030')
 
 from util import opts, tools, mlp
 from util.classifier import classifier, classifier2

@@ -2,14 +2,13 @@ import os
 import shlex
 import subprocess
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 # exp_set = '/zsl'
 exp_set = '/gzsl'
 
-model_type = '/clswgan'
+# model_type = '/clswgan'
 # model_type = '/wgan'
-# model_type = '/rwgan'
 # model_type = '/dwgan'
 # model_type = '/bcclswgan'
 # model_type = '/bcwgan'
@@ -19,13 +18,16 @@ model_type = '/clswgan'
 # model_type = '/rawgan'
 # model_type = '/mmc_rclswgan'
 # model_type = '/mmcfrwgan'
+# model_type = '/rwgan'
 # model_type = '/frwgan'
+model_type = '/rrgan'
 
 exp_type = '/base'
 # exp_type = '/best'
 # exp_type = '/for_test'
 # exp_type = '/tsne'
 # exp_type = '/e4_rwgan_with_F'
+# exp_type = '/e5_v1'
 
 # datasets = ['/APY', '/AWA1', '/AWA2', '/CUB', '/FLO', '/SUN']
 datasets = ['/CUB']

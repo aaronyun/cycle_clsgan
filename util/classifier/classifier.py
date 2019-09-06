@@ -1,3 +1,5 @@
+import sys
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -5,6 +7,8 @@ import torch.optim as optim
 
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler 
+
+# sys.path.append('/home/xingyun/docker/mmcgan_torch030')
 
 from util import tools
 
@@ -19,7 +23,7 @@ class CLASSIFIER:
         self.input_dim = _input_dim
         self.cuda = _cuda
         self.model =  LINEAR_LOGSOFTMAX(self.input_dim, self.nclass)
-        self.model.apply(util.weights_init)
+        self.model.apply(tools.weights_init)
         self.criterion = nn.NLLLoss()
         
         self.input = torch.FloatTensor(_batch_size, self.input_dim) 
@@ -109,7 +113,7 @@ class CLASSIFIER:
             _, predicted_label[start:end] = torch.max(output.data, 1)
             start = end
 
-        acc = self.compute_per_class_acc(util.map_label(test_label, target_classes), predicted_label, target_classes.size(0))
+        acc = self.compute_per_class_acc(tools.map_label(test_label, target_classes), predicted_label, target_classes.size(0))
         return acc
 
     def compute_per_class_acc(self, test_label, predicted_label, nclass):

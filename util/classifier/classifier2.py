@@ -8,6 +8,8 @@ import torch.optim as optim
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler 
 
+sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+
 from util import tools
 
 class CLASSIFIER:
@@ -36,7 +38,7 @@ class CLASSIFIER:
         self.beta1 = _beta1
 
         self.model = LINEAR_LOGSOFTMAX(self.input_dim, self.nclass)
-        self.model.apply(util.weights_init)
+        self.model.apply(tools.weights_init)
         self.criterion = nn.NLLLoss()
         self.optimizer = optim.Adam(self.model.parameters(), lr=_lr, betas=(_beta1, 0.999))
 
@@ -100,7 +102,7 @@ class CLASSIFIER:
             _, predicted_label[start:end] = torch.max(output.data, 1)
             start = end
 
-        acc = self.compute_per_class_acc_zsl(util.map_label(test_label, target_classes), predicted_label, target_classes.size(0))
+        acc = self.compute_per_class_acc_zsl(tools.map_label(test_label, target_classes), predicted_label, target_classes.size(0))
         return acc
 
     def compute_per_class_acc_zsl(self, test_label, predicted_label, nclass):

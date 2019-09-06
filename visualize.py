@@ -1,5 +1,5 @@
 #------------------------------------------------------------------------------#
-# For visualization on local
+# Visualize data on local machine
 #------------------------------------------------------------------------------#
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,24 +9,28 @@ from mpl_toolkits.mplot3d import Axes3D
 exp_set = '\\gzsl'
 
 model = '\\frwgan'
+# model = '\\rwgan'
 
-exp_type= '\\e4_rwgan_with_F'
-# exp_type= '\\base'
+# exp_type= '\\e4_rwgan_with_F'
+exp_type= '\\base'
 
 # dataset= '\\APY'
 # dataset= '\\AWA1'
 # dataset= '\\AWA2'
-# dataset= '\\CUB'
-dataset= '\\FLO'
+dataset= '\\CUB'
+# dataset= '\\FLO'
 # dataset= '\\SUN'
 
 root = 'G:\\mmcgan_torch030\\fig' + exp_set + model + exp_type + dataset
 
+# load data
 label = np.load(file=root+'\\label.npy')
-train_vf_embed = np.load(file=root+'\\train_vf_embed.npy')
-gen_vf_embed = np.load(file=root+'\\gen_vf_embed.npy')
-train_hf_embed = np.load(file=root+'\\train_hf_embed.npy')
-gen_hf_embed = np.load(file=root+'\\gen_hf_embed.npy')
+
+vf_train_embed = np.load(file=root+'\\vf_train_embed.npy')
+vf_gen_embed = np.load(file=root+'\\vf_gen_embed.npy')
+
+# hf_train_embed = np.load(file=root+'\\hf_train_embed.npy')
+# hf_gen_embed = np.load(file=root+'\\hf_gen_embed.npy')
 
 # att_embed = np.load(file=root+'\\att_embed.npy')
 # train_gen_att_embed = np.load(file=root+'\\train_gen_att_embed.npy')
@@ -36,35 +40,25 @@ gen_hf_embed = np.load(file=root+'\\gen_hf_embed.npy')
 # vf&hf visualization
 fig1 = plt.figure(num=1, tight_layout=True)
 
-# row 1 for vf
-ax1 = fig1.add_subplot(221, projection='3d')
-ax1.set_title('train_vf vs gen_vf(diff color)')
+# visual feature
+ax1 = fig1.add_subplot(111, projection='3d')
+ax1.set_title('train_vf vs gen_vf')
 ax1.set_facecolor('#C0C0C0')
-ax1.scatter(train_vf_embed[:,0], train_vf_embed[:,1], train_vf_embed[:,2], c=label, marker='o', cmap=plt.cm.Spectral)
-ax1.scatter(gen_vf_embed[:,0], gen_vf_embed[:,1], gen_vf_embed[:,2], c=label, marker='s', cmap=plt.cm.Spectral)
+ax1.scatter(vf_train_embed[:,0], vf_train_embed[:,1], vf_train_embed[:,2], c='g', marker='o')
+ax1.scatter(vf_gen_embed[:,0], vf_gen_embed[:,1], vf_gen_embed[:,2], c='r', marker='s')
 
-ax2 = fig1.add_subplot(222, projection='3d')
-ax2.set_title('train_vf vs gen_vf(same color)')
-ax2.set_facecolor('#C0C0C0')
-ax2.scatter(train_vf_embed[:,0], train_vf_embed[:,1], train_vf_embed[:,2], c='g', marker='o')
-ax2.scatter(gen_vf_embed[:,0], gen_vf_embed[:,1], gen_vf_embed[:,2], c='r', marker='s')
+fig2 = plt.figure(num=2, tight_layout='3d')
 
-# row 2 for hf
-ax3 = fig1.add_subplot(223, projection='3d')
-ax3.set_title('train_hf vs gen_hf(diff color)')
-ax3.set_facecolor('#C0C0C0')
-ax3.scatter(train_hf_embed[:,0], train_hf_embed[:,1], train_hf_embed[:,2], c=label, marker='o', cmap=plt.cm.Spectral)
-ax3.scatter(gen_hf_embed[:,0], gen_hf_embed[:,1], gen_hf_embed[:,2], c=label, marker='s', cmap=plt.cm.Spectral)
-
-ax4 = fig1.add_subplot(224, projection='3d')
-ax4.set_title('train_hf vs gen_hf(same color)')
-ax4.set_facecolor('#C0C0C0')
-ax4.scatter(train_hf_embed[:,0], train_hf_embed[:,1], train_hf_embed[:,2], c='g', marker='o')
-ax4.scatter(gen_hf_embed[:,0], gen_hf_embed[:,1], gen_hf_embed[:,2], c='r', marker='s')
+# hidden feature
+ax1 = fig1.add_subplot(111, projection='3d')
+ax1.set_title('gen_hf')
+ax1.set_facecolor('#C0C0C0')
+# ax1.scatter(hf_train_embed[:,0], hf_train_embed[:,1], hf_train_embed[:,2], c='g', marker='o')
+ax1.scatter(hf_gen_embed[:,0], hf_gen_embed[:,1], hf_gen_embed[:,2], c='r', marker='s')
 
 plt.show()
 
-# # att visualization
+# # attribute visualization
 # fig2 = plt.figure(num=2, tight_layout=True)
 
 # ax1 = fig2.add_subplot(131, projection='3d')

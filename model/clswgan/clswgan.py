@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import os
+import sys
 import random
 import argparse
 
@@ -10,6 +11,8 @@ import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
+
+sys.path.append('/home/xingyun/docker/mmcgan_torch030')
 
 from util import tools, mlp, opts
 from util.classifier import classifier, classifier2

@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
+#------------------------------------------------------------------------------#
+# 
+#------------------------------------------------------------------------------#
+
 from __future__ import print_function
 
 import os
+import sys
 import argparse
 import random
 
@@ -13,14 +18,26 @@ import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
 import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+import numpy as np
 
-from util import opts, tools, mlp
-from util.classifier import classifier, classifier2
+sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+
+from util import opts
+from util import tools
+from util import mlp
+from util.classifier import classifier
+from util.classifier import classifier2
 
 #------------------------------------------------------------------------------#
 
 opt = opts.parse()
 print(opt)
+
+try:
+    os.makedirs(opt.outf)
+except OSError:
+    pass
 
 #------------------------------------------------------------------------------#
 
@@ -264,7 +281,7 @@ for epoch in range(opt.nepoch):
         gen_vf = gen_vfv.data
 
         # get triple data
-        anchor = gen_vfv.data
+        anchor = gen_vf
         anchor_index = input_index.squeeze()
 
         triple_data = tools.Triple_Selector(data, anchor, anchor_index)
@@ -278,6 +295,7 @@ for epoch in range(opt.nepoch):
             triple_batchv = Variable(triple_batch)
 
             # train F Net with triples
+            #! only train Fusion Net with generated visual features
             triple_hf = netF(triple_batchv)
 
             # triplet loss
@@ -286,11 +304,13 @@ for epoch in range(opt.nepoch):
             neg = triple_hf[opt.batch_size*2 : opt.batch_size*3]
 
             triplet_loss = triplet_criterion(anchor, pos, neg)
-            triplet_loss = triple_loss.mean()
+            triplet_loss = triplet_loss.mean()
             triplet_loss.backward(retain_graph=True)
 
-            F_cost = triple_loss
+            F_cost = triplet_loss
             optimizerF.step()
+
+        gen_hfv = netF(gen_vfv) # generate hidden feature after F training
 #------------------------------------------------------------------------------#
 
         ################################
@@ -299,7 +319,6 @@ for epoch in range(opt.nepoch):
         netR.zero_grad()
 
         # R training
-        gen_hfv = netF(gen_vfv)
         gen_attv = netR(gen_hfv)
 
         # attribute consistency loss
@@ -330,19 +349,19 @@ for epoch in range(opt.nepoch):
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
         if cls_.H > max_H:
             max_H = cls_.H
             corresponding_epoch = epoch
 
             # embedding for visual features
-            vf_train_embed = TSNE(n_components=3).fit_transform(input_res.cpu().numpy())
+            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
 
             # embedding for hidden features
-            hf_train_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
-            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.data.cpu().numpy())
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hfv.data.cpu().numpy())
+            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hfv.data.cpu().numpy())
 
             # label of features
             tsne_label = (input_label.cpu()).numpy()
@@ -353,19 +372,19 @@ for epoch in range(opt.nepoch):
         cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
 
         if acc > max_acc:
             max_acc = acc
             corresponding_epoch = epoch
 
             # embedding for visual features
-            vf_train_embed = TSNE(n_components=3).fit_transform(input_res.cpu().numpy())
+            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
 
             # embedding for hidden features
-            hf_train_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
-            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.data.cpu().numpy())
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
+            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hfv.data.cpu().numpy())
 
             # label of features
             tsne_label = (input_label.cpu()).numpy()
@@ -380,7 +399,7 @@ else:
 # save visualization data
 exp_set = '/gzsl'
 model = '/frwgan'
-exp_type = ''
+exp_type = '/base/'
 
 root = '/home/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
 
@@ -389,5 +408,5 @@ np.save(file=root+'/label', arr=tsne_label) # 数据的标签
 np.save(file=root+'/vf_train_embed', arr=vf_train_embed) # 训练集的vf
 np.save(file=root+'/vf_gen_embed', arr=vf_gen_embed) # 生成的vf
 
-np.save(file=root+'/hf_train_embed')
+# np.save(file=root+'/hf_train_embed', arr=hf_train_embed)
 np.save(file=root+'/hf_gen_embed', arr=hf_gen_embed) # 生成的hf

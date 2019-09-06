@@ -244,6 +244,9 @@ for epoch in range(opt.nepoch):
             # loss for fake data
             loss_d_fake = loss_nll(d_fake_bin, zeros, d_fake_multi, input_label_v, lam=1)
 
+            # # gradient penalty
+            # gradient_penalty = calc_gradient_penalty(netD, input_res, fake_vf_v.data, input_attv)
+
             # Overall Discriminator Loss
             D_cost = loss_d_adv + loss_d_fake - loss_d_real
             D_cost.backward()

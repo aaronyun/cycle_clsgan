@@ -21,13 +21,11 @@ exp_set = '/gzsl'
 # model_type = '/rwgan'
 # model_type = '/frwgan'
 model_type = '/rrgan'
+# model_type = '/robgan'
 
-exp_type = '/base'
-# exp_type = '/best'
+exp_type = '/e4_v2'
+# exp_type = '/base'
 # exp_type = '/for_test'
-# exp_type = '/tsne'
-# exp_type = '/e4_rwgan_with_F'
-# exp_type = '/e5_v1'
 
 # datasets = ['/APY', '/AWA1', '/AWA2', '/CUB', '/FLO', '/SUN']
 datasets = ['/CUB']

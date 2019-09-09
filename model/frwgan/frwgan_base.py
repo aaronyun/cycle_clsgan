@@ -265,6 +265,7 @@ for epoch in range(opt.nepoch):
 
         # generate fake data
         noise.normal_(0, 1)
+        noisev = Variable(noise)
         gen_vfv = netG(noisev, input_attv)
 
         # train G with Discriminator

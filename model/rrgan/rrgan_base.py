@@ -213,34 +213,32 @@ for epoch in range(opt.nepoch):
         for iter_d in range(opt.critic_iter):
             netD.zero_grad()
 
-            # data sampling
+            # Data Sampling
             sample()
             input_vf_v = Variable(input_res)
             input_att_v = Variable(input_att)
             input_label_v = Variable(input_label)
 
-            # Feed Real Data #
-            # get adversarial sample
-            adv_input_vf_v = attack_Linf_PGD(input_vf_v, ones, input_att_v, input_label_v, netD, loss_nll, opt.adv_steps, opt.epsilon)
+            # Train D with Adversarial Data
+            ## get adversarial sample
+            adv_vf_v = attack_Linf_PGD(input_vf_v, ones, input_att_v, input_label_v, netD, loss_nll, opt.adv_steps, opt.epsilon)
+            ## training
+            d_adv_bin, d_adv_multi = netD(adv_vf_v, input_att_v)
+            ## loss for adversarial data
+            loss_d_adv = loss_nll(d_adv_bin, ones, d_adv_multi, input_label_v, lam=0.5)
 
-            # train D with adversarial data
-            d_real_bin, d_real_multi = netD(adv_input_vf_v, input_att_v)
-
-            # loss for adversarial data
-            loss_d_real = loss_nll(d_real_bin, ones, d_real_multi, input_label_v, lam=0.5)
-
-            # Feed Fake Data #
-            # generate fake visual feature
+            # Train D with Fake Data
+            ## generate fake data
             noise.normal_(0, 1)
             noise_v = Variable(noise)
             fake_vf_v = netG(noise_v, input_att_v)
-
-            # train D with generated data
+            ## training
             d_fake_bin, d_fake_multi = netD(fake_vf_v.detach(), input_att_v)
+            ## loss for fake data
             loss_d_fake = loss_nll(d_fake_bin, zeros, d_fake_multi, input_label_v, lam=1)
 
             # Overall Discriminator Loss
-            D_cost = loss_d_real + loss_d_fake
+            D_cost = loss_d_adv + loss_d_fake
             D_cost.backward()
             optimizerD.step()
 
@@ -254,24 +252,33 @@ for epoch in range(opt.nepoch):
         ###########################
         netG.zero_grad()
 
+        # Data Sampling
         sample()
+        input_vf_v = Variable(input_res)
+        input_att_v = Variable(input_att)
+        input_label_v = Variable(input_label)
 
+        # Train Generator with Discriminator
+        ## generate fake data
         noise.normal_(0, 1)
         noise_v = Variable(noise)
         input_att_v = Variable(input_att)
-        # generate fake data
         gen_vf_v = netG(noise_v, input_att_v)
-
+        ## training
         g_fake_bin, g_fake_multi = netD(gen_vf_v, input_att_v)
+        # loss of generator
         loss_g = loss_nll(g_fake_bin, ones, g_fake_multi, input_label_v, lam=0.5)
 
+        # Generator Loss
         G_cost = loss_g
 
 #------------------------------------------------------------------------------#
 
         # for visualization
-        train_vf = input_res
+        train_vf = input_vf_v.data
         gen_vf = gen_vf_v.data
+        label = input_label
+
 #------------------------------------------------------------------------------#
 
         ################################
@@ -279,7 +286,7 @@ for epoch in range(opt.nepoch):
         ################################
         netR.zero_grad()
 
-        # R training
+        # r training
         syn_att_v = netR(gen_vf_v)
 
         # attribute consistency loss
@@ -290,6 +297,7 @@ for epoch in range(opt.nepoch):
         optimizerR.step()
 
 #------------------------------------------------------------------------------#
+
         # FINAL GENERATOR LOSS
         errG = G_cost + opt.r_weight * R_cost
         errG.backward()
@@ -319,7 +327,7 @@ for epoch in range(opt.nepoch):
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
 
             # label of features
-            tsne_label = (input_label.cpu()).numpy()
+            tsne_label = (label.cpu()).numpy()
 
     else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
@@ -338,7 +346,7 @@ for epoch in range(opt.nepoch):
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
 
             # label of features
-            tsne_label = (input_label.cpu()).numpy()
+            tsne_label = (label.cpu()).numpy()
 
 
     netG.train()
@@ -350,7 +358,7 @@ else:
 
 # save visualization data
 exp_set = '/gzsl'
-model = '/rrwgan'
+model = '/rrgan'
 exp_type = '/base/'
 
 root = '/home/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset

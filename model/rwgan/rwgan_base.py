@@ -29,10 +29,10 @@ from util.classifier import classifier, classifier2
 opt = opts.parse()
 print(opt)
 
-# try:
-#     os.makedirs(opt.outf)
-# except OSError:
-#     pass
+try:
+    os.makedirs(opt.outf)
+except OSError:
+    pass
 
 #------------------------------------------------------------------------------#
 

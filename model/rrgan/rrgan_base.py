@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+#------------------------------------------------------------------------------#
+# 
+#------------------------------------------------------------------------------#
 
 from __future__ import print_function
 
@@ -55,26 +58,25 @@ if torch.cuda.is_available() and not opt.cuda:
 
 #------------------------------------------------------------------------------#
 
-# load datasets and datamixer
+# load datasets
 data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
-# data_mixer = mix.DataMixer(data, opt)
 
 #------------------------------------------------------------------------------#
 
-# Generator initialize
+# Generator Initialize
 netG = mlp.MLP_G(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
-# Discriminator initialize
+# Discriminator Initialize
 netD = mlp.robDis(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-# Reverse net initialize
+# Reverse Net Initialize
 if opt.r_hl == 1:
     netR = mlp.MLP_1HL_Dropout_R(opt)
 elif opt.r_hl == 2:
@@ -89,25 +91,26 @@ print(netR)
 
 #------------------------------------------------------------------------------#
 
-# setup optimizer
+# Setup Optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
-# loss function
+# Loss Function
 cos_criterion = nn.CosineSimilarity()
 euc_criterion = nn.PairwiseDistance(p=2)
 
 #------------------------------------------------------------------------------#
 
-# create input tensor
+# Create Input Iensor
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
 input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
 input_label = torch.LongTensor(opt.batch_size)
+input_index = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
 
-zeros = Variable(torch.FloatTensor(opt.batch_size).fill_(0))
-ones = Variable(torch.FloatTensor(opt.batch_size).fill_(1))
+zeros_v = Variable(torch.FloatTensor(opt.batch_size).fill_(0))
+ones_v = Variable(torch.FloatTensor(opt.batch_size).fill_(1))
 
 one = torch.FloatTensor([1])
 mone = one * -1
@@ -117,10 +120,10 @@ if opt.cuda:
     netG.cuda()
     netR.cuda()
 
-    noise, input_res, input_att, input_label  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda()
+    noise, input_res, input_att, input_label, input_index  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda(), input_index.cuda()
 
-    zeros = zeros.cuda()
-    ones = ones.cuda()
+    zeros_v = zeros_v.cuda()
+    ones_v = ones_v.cuda()
 
     cos_criterion = cos_criterion.cuda()
     euc_criterion = euc_criterion.cuda()
@@ -137,6 +140,7 @@ def sample():
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
     input_label.copy_(tools.map_label(batch_label, data.seenclasses))
+    input_index.copy_(batch_index)
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
@@ -189,7 +193,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 
 #------------------------------------------------------------------------------#
 
-# store best result and corresponding epoch
+# Store Best Results
 max_H = 0.0
 max_acc = 0.0
 corresponding_epoch = 0
@@ -221,11 +225,11 @@ for epoch in range(opt.nepoch):
 
             # Train D with Adversarial Data
             ## get adversarial sample
-            adv_vf_v = attack_Linf_PGD(input_vf_v, ones, input_att_v, input_label_v, netD, loss_nll, opt.adv_steps, opt.epsilon)
+            adv_vf_v = attack_Linf_PGD(input_vf_v, ones_v, input_att_v, input_label_v, netD, loss_nll, opt.adv_steps, opt.epsilon)
             ## training
-            d_adv_bin, d_adv_multi = netD(adv_vf_v, input_att_v)
+            d_adv_bin_v, d_adv_multi_v = netD(adv_vf_v, input_att_v)
             ## loss for adversarial data
-            loss_d_adv = loss_nll(d_adv_bin, ones, d_adv_multi, input_label_v, lam=0.5)
+            loss_d_adv = loss_nll(d_adv_bin_v, ones_v, d_adv_multi_v, input_label_v, lam=0.5)
 
             # Train D with Fake Data
             ## generate fake data
@@ -233,9 +237,9 @@ for epoch in range(opt.nepoch):
             noise_v = Variable(noise)
             fake_vf_v = netG(noise_v, input_att_v)
             ## training
-            d_fake_bin, d_fake_multi = netD(fake_vf_v.detach(), input_att_v)
+            d_fake_bin_v, d_fake_multi_v = netD(fake_vf_v.detach(), input_att_v)
             ## loss for fake data
-            loss_d_fake = loss_nll(d_fake_bin, zeros, d_fake_multi, input_label_v, lam=1)
+            loss_d_fake = loss_nll(d_fake_bin_v, zeros_v, d_fake_multi_v, input_label_v, lam=1)
 
             # Overall Discriminator Loss
             D_cost = loss_d_adv + loss_d_fake
@@ -262,12 +266,11 @@ for epoch in range(opt.nepoch):
         ## generate fake data
         noise.normal_(0, 1)
         noise_v = Variable(noise)
-        input_att_v = Variable(input_att)
         gen_vf_v = netG(noise_v, input_att_v)
         ## training
-        g_fake_bin, g_fake_multi = netD(gen_vf_v, input_att_v)
-        # loss of generator
-        loss_g = loss_nll(g_fake_bin, ones, g_fake_multi, input_label_v, lam=0.5)
+        g_fake_bin_v, g_fake_multi_v = netD(gen_vf_v, input_att_v)
+        # loss
+        loss_g = loss_nll(g_fake_bin_v, ones_v, g_fake_multi_v, input_label_v, lam=0.5)
 
         # Generator Loss
         G_cost = loss_g
@@ -277,7 +280,7 @@ for epoch in range(opt.nepoch):
         # for visualization
         train_vf = input_vf_v.data
         gen_vf = gen_vf_v.data
-        label = input_label
+        label = input_label_v.data
 
 #------------------------------------------------------------------------------#
 
@@ -286,12 +289,12 @@ for epoch in range(opt.nepoch):
         ################################
         netR.zero_grad()
 
-        # r training
+        # Train Reverse Net with Generated Visual Feature
+        ## r training
         syn_att_v = netR(gen_vf_v)
-
-        # attribute consistency loss
+        ## attribute consistency loss
         R_cost = cos_criterion(syn_att_v, input_att_v)
-        R_cost = R_cost.mean()
+        R_cost = R_cost.mean() # R_cost should increase
 
         R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
@@ -299,7 +302,7 @@ for epoch in range(opt.nepoch):
 #------------------------------------------------------------------------------#
 
         # FINAL GENERATOR LOSS
-        errG = G_cost + opt.r_weight * R_cost
+        errG = G_cost - opt.r_weight * R_cost
         errG.backward()
         optimizerG.step()
 
@@ -347,7 +350,6 @@ for epoch in range(opt.nepoch):
 
             # label of features
             tsne_label = (label.cpu()).numpy()
-
 
     netG.train()
 

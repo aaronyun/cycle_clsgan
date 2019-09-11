@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+#------------------------------------------------------------------------------#
+# 
+#------------------------------------------------------------------------------#
+
 from __future__ import print_function
 
 import os
@@ -12,10 +17,17 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
+import numpy as np
+from sklearn.manifold import TSNE
+
 sys.path.append('/home/xingyun/docker/mmcgan_torch030')
 
-from util import tools, mlp, opts
+from util import tools
+from util import mlp
+from util import opts
 from util.classifier import classifier, classifier2
+
+#------------------------------------------------------------------------------#
 
 opt = opts.parse()
 print(opt)
@@ -24,6 +36,8 @@ try:
     os.makedirs(opt.outf)
 except OSError:
     pass
+
+#------------------------------------------------------------------------------#
 
 # intialize internal state
 if opt.manualSeed is None:
@@ -41,20 +55,33 @@ cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-# load dataset
+#------------------------------------------------------------------------------#
+
+# load datasets
 data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
-# initialize generator and discriminator
+#------------------------------------------------------------------------------#
+
+# Generator initialize
 netG = mlp.MLP_G(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
+# Discriminator initialize
 netD = mlp.MLP_CRITIC(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
+
+#------------------------------------------------------------------------------#
+
+# setup optimizer
+optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+
+#------------------------------------------------------------------------------#
 
 # create input tensor
 input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
@@ -69,14 +96,16 @@ if opt.cuda:
     netD.cuda()
     netG.cuda()
 
-    noise = noise.cuda()
-    input_res, input_att, input_label = input_res.cuda(), input_att.cuda(), input_label.cuda()
+    noise, input_res, input_att, input_label = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
 
+#------------------------------------------------------------------------------#
+
+# auxiliary functions
 def sample():
-    batch_feature, batch_label, batch_att = data.next_batch(opt.batch_size)
+    batch_feature, batch_label, batch_att, batch_index = data.next_batch(opt.batch_size)
 
     input_res.copy_(batch_feature)
     input_att.copy_(batch_att)
@@ -96,15 +125,15 @@ def generate_syn_feature(netG, classes, attribute, num):
         iclass = classes[i]
         iclass_att = attribute[iclass]
         syn_att.copy_(iclass_att.repeat(num, 1))
+
         syn_noise.normal_(0, 1)
-        output = netG(Variable(syn_noise, volatile=True), Variable(syn_att, volatile=True))
+        output = netG(Variable(syn_noise, requires_grad=True), Variable(syn_att, requires_grad=True))
         syn_feature.narrow(0, i*num, num).copy_(output.data.cpu())
         syn_label.narrow(0, i*num, num).fill_(iclass)
 
     return syn_feature, syn_label
 
 def calc_gradient_penalty(netD, real_data, fake_data, input_att):
-    #print real_data.size()
     alpha = torch.rand(opt.batch_size, 1)
     alpha = alpha.expand(real_data.size())
     if opt.cuda:
@@ -129,9 +158,7 @@ def calc_gradient_penalty(netD, real_data, fake_data, input_att):
 
     return gradient_penalty
 
-# setup optimizer
-optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+#------------------------------------------------------------------------------#
 
 # store best result and corresponding epoch
 max_H = 0
@@ -143,8 +170,13 @@ if opt.gzsl:
 else:
     print('EPOCH          |  D_cost  |  G_cost  |  Wasserstein_D  |  ACC_unseen  |')
 
+#------------------------------------------------------------------------------#
+
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
+
+#------------------------------------------------------------------------------#
+
         ############################
         # DISCRIMINATOR TRAINING
         ###########################
@@ -152,11 +184,13 @@ for epoch in range(opt.nepoch):
             p.requires_grad = True # they are set to False below in netG update
 
         for iter_d in range(opt.critic_iter):
-            sample()
             netD.zero_grad()
 
+            # Data Sampling
+            sample()
             input_resv = Variable(input_res)
             input_attv = Variable(input_att)
+            input_label_v = Variable(input_label)
 
             # train D with real data
             criticD_real = netD(input_resv, input_attv)
@@ -176,34 +210,56 @@ for epoch in range(opt.nepoch):
             gradient_penalty = calc_gradient_penalty(netD, input_res, fake.data, input_attv)
             gradient_penalty.backward()
 
+            # wasserstein distance
             Wasserstein_D = criticD_real - criticD_fake
+
             D_cost = criticD_fake - criticD_real + gradient_penalty
             optimizerD.step()
+
+        for p in netD.parameters():
+            p.requires_grad = False # avoid computation
+
+#------------------------------------------------------------------------------#
 
         ############################
         # GENERATOR TRAINING
         ###########################
-        for p in netD.parameters():
-            p.requires_grad = False # avoid computation
-
         netG.zero_grad()
 
-        # generate fake data
-        input_attv = Variable(input_att)
-        noise.normal_(0, 1)
-        noisev = Variable(noise)
-        fake = netG(noisev, input_attv)
+        # Data Sampling
+        sample()
+        input_vf_v = Variable(input_res)
+        input_att_v = Variable(input_att)
 
-        criticG_fake = netD(fake, input_attv)
+        # Train Generator with Discriminator
+        ## generate fake data
+        noise.normal_(0, 1)
+        noise_v = Variable(noise)
+        gen_vf_v = netG(noise_v, input_att_v)
+        ## training
+        criticG_fake = netD(gen_vf_v, input_att_v)
         criticG_fake = criticG_fake.mean()
 
+        # Generator Loss
         G_cost = -criticG_fake
 
+#------------------------------------------------------------------------------#
+
+        # for visualization
+        train_vf = input_vf_v.data
+        gen_vf = gen_vf_v.data
+        label = input_label
+
+#------------------------------------------------------------------------------#
+
+        # FINAL GENERATOR LOSS
         errG = G_cost
         errG.backward()
         optimizerG.step()
 
-    netG.eval() # evaluate the model, set G to evaluation mode
+#------------------------------------------------------------------------------#
+
+    netG.eval()
 
     if opt.gzsl:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num)
@@ -216,11 +272,17 @@ for epoch in range(opt.nepoch):
 
         print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^12.4f}|{:^14.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
-        # print('unseen=%.4f, seen=%.4f, h=%.4f' % ())
-
         if cls_.H > max_H:
             max_H = cls_.H
             corresponding_epoch = epoch
+        
+            # embedding for visual features
+            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
+            vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
+
+            # label of features
+            tsne_label = (label.cpu()).numpy()
+
     else:
         syn_feature, syn_label = generate_syn_feature(netG, data.unseenclasses, data.attribute, opt.syn_num) 
 
@@ -229,11 +291,16 @@ for epoch in range(opt.nepoch):
 
         print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], Wasserstein_D.data[0], acc))
 
-        # print('unseen class accuracy= ', acc)
-
         if acc > max_acc:
             max_acc = acc
             corresponding_epoch = epoch
+
+            # embedding for visual features
+            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
+            vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
+
+            # label of features
+            tsne_label = (label.cpu()).numpy()
 
     netG.train() # reset G to training mode
 
@@ -241,3 +308,15 @@ if opt.gzsl:
     print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
 else:
     print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch+1))
+
+# save visualization data
+exp_set = '/gzsl'
+model = '/wgan'
+exp_type = '/base/'
+
+root = '/home/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
+
+np.save(file=root+'/label', arr=tsne_label) # 数据的标签
+
+np.save(file=root+'/vf_train_embed', arr=vf_train_embed) # 训练集的vf
+np.save(file=root+'/vf_gen_embed', arr=vf_gen_embed) # 生成的vf

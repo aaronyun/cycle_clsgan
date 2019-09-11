@@ -1,6 +1,8 @@
 import random
 
 import torch
+from torch.autograd import Variable
+from torch.autograd import autograd
 import h5py
 import numpy as np
 import scipy.io as sio
@@ -30,6 +32,71 @@ def map_label(label, classes):
         mapped_label[label==classes[i]] = i
 
     return mapped_label
+
+def sample(opt, data):
+    batch_feature, batch_label, batch_att, batch_index = data.next_batch(opt.batch_size)
+
+    batch_vf = torch.FloatTensor(batch_feature)
+    batch_att = torch.FloatTensor(batch_att)
+    batch_label = torch.LongTensor(batch_label)
+    batch_index = torch.LongTensor(batch_index)
+
+    if opt.cuda:
+        batch_vf = batch_vf.cuda()
+        batch_label = batch_label.cuda()
+        batch_att = batch_att.cuda()
+        batch_index = batch_index.cuda()
+
+    return batch_vf, batch_label, batch_att, batch_index
+
+def calc_gradient_penalty(opt, netD, real_data, fake_data, input_att):
+    alpha = torch.rand(opt.batch_size, 1)
+    alpha = alpha.expand(real_data.size())
+    if opt.cuda:
+        alpha = alpha.cuda()
+
+    interpolates = alpha * real_data + ((1 - alpha) * fake_data)
+    if opt.cuda:
+        interpolates = interpolates.cuda()
+    interpolates = Variable(interpolates, requires_grad=True)
+
+    disc_interpolates = netD(interpolates, input_att)
+
+    ones = torch.ones(disc_interpolates.size())
+    if opt.cuda:
+        ones = ones.cuda()
+
+    gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates, grad_outputs=ones, create_graph=True, retain_graph=True, only_inputs=True)[0]
+
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * opt.lambda1
+
+    return gradient_penalty
+
+def generate_syn_feature(opt, netG, classes, attribute, num):
+    nclass = classes.size(0)
+    syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
+    syn_label = torch.LongTensor(nclass*num) 
+    syn_att = torch.FloatTensor(num, opt.attSize)
+    syn_noise = torch.FloatTensor(num, opt.nz)
+    if opt.cuda:
+        syn_att = syn_att.cuda()
+        syn_noise = syn_noise.cuda()
+
+    for i in range(nclass):
+        iclass = classes[i]
+        iclass_att = attribute[iclass]
+
+        # temp = iclass_att.clone()
+        # temp = temp.repeat(num, 1)
+        # syn_att.copy_(temp)
+        syn_att.copy_(iclass_att.repeat(num, 1))
+
+        syn_noise.normal_(0, 1)
+        output = netG(Variable(syn_noise, requires_grad=False), Variable(syn_att, requires_grad=False))
+        syn_feature.narrow(0, i*num, num).copy_(output.data.cpu())
+        syn_label.narrow(0, i*num, num).fill_(iclass)
+
+    return syn_feature, syn_label
 
 class Img_Preprocess(object):
     def __init__(self):

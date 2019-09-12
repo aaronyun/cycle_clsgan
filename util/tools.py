@@ -141,83 +141,235 @@ class Img_Preprocess(object):
 
         return f
 
-class Triple_Selector(object):
-    """Construct various triplet data based on exist anchor and dataset.
+class Triplet_Selector(object):
+    """Construct various triplet data based on given anchor and train data.
 
     Class information...
 
     Attributes:
 
     """
-    def __init__(self, dataset, anchor, anchor_index):
+    def __init__(self, dataset, anchor, anchor_label, anchor_index, triplet_type='hard'):
         """
         """
-        self.base = dataset.train_feature # base data containing anchor
+        # Initialize
+        self.triplet_type = triplet_type
+
+        self.base = dataset.train_feature # train data containing anchor
+        self.base_labe = dataset.train_label
+        self.base_idx = [x for x in range(self.base.size(0))]
+
         self.anchor = anchor
-        self.anchor_labels = torch.index_select(dataset.train_label.cuda(), 0, anchor_index)
+        self.anchor_label = anchor_label
+        self.anchor_index = anchor_index
 
-        # exclude anchor from base data
-        # get index firstly
-        all_idx = [x for x in range(self.base.size(0))]
-        base_excluded_anchor_idx = torch.LongTensor([x for x in all_idx if x not in anchor_index.cpu()])
-        # then select features by indexing
-        self.base_excluded_anchor = torch.index_select(self.base.cuda(), 0, base_excluded_anchor_idx.cuda())
-        self.base_excluded_anchor_labels = torch.index_select(dataset.train_label.cuda(), 0, base_excluded_anchor_idx.cuda())
+        # Exclude Anchor from Train Data
+        ## get index of remainder data
+        remainder_idx = torch.LongTensor([x for x in self.base_idx if x not in self.anchor_index])
+        ## select features and lables by indexing
+        self.remainder = torch.index_select(self.base, 0, remainder_idx)
+        self.remainder_label = torch.index_select(base_label, 0, remainder_idx)
 
-        self.hardest_triple = self.construct_hardest_triple(self.anchor, self.base_excluded_anchor)
+        # Get Triplet Data Based on Triplet Type
+        if self.triplet_type == 'hard':
+            self.triplet_data = self.construct_hard_triplet()
+        elif self.triplet_type == 'semi_hard':
+            self.triplet_data = self.construct_semi_hard_triplet()
+        elif self.triplet_triple == 'easy':
+            self.triplet_data = self.construct_easy_triplet()
+        else:
+            raise('Invalid triplet data type!')
 
-    def construct_hardest_triple(self, anchor, base_excluded_anchor):
-        """Construct hardest triple data based on given anchor and base dataset.
+    def construct_hard_triplet(self, anchor, remainder):
+        """Construct hard triplet based on given anchors and remainder.
 
-        Anchors are selected from base dataset.
+        Anchors are selected from base data.
 
         Args:
-            anchor: anchor visual feature to construct hardest triple.
-            base_data: data base used to select positive and negative visual features.
+            anchor: anchor visual feature to construct hard triplet
+            remainder: used to select positive and negative visual features
 
         Returns:
-            hardest_triple_data: triples constructed from anchor.
+            hard_triplet: triplets constructed from anchor.
 
         Raises:
 
         """
-        # Firstly get distance between visual features
-        pairwise_dist = self.pairwise_distances(anchor, base_excluded_anchor)
+        # Distance Between Anchor and Remainder
+        pairwise_dist = self.pairwise_distances(anchor, remainder)
 
-        # Secondly get a mask to hide values have different classes
+        # Positive Data
+        ## positive mask to hide values which blong to different class
         pos_mask = (self.get_positive_mask()).type(torch.FloatTensor)
-        pos_mask = pos_mask.cuda()
-        # distance between anchors and positives
+        ## distance between anchors and positives
         anchor_pos_dist = pos_mask * pairwise_dist
-
-        # get maxium index
+        ## index of maximum
         _, max_idx = torch.max(anchor_pos_dist, 1)
+        ## final hardest positive element
+        hard_pos = torch.index_select(self.remainder, 0, max_idx)
 
-        # 
-        anchor_hardest_pos = torch.index_select(self.base.cuda(), 0, max_idx)
-
-        # Same as positives
+        # Negative Data
+        ## negative mask
         neg_mask = (self.get_negative_mask()).type(torch.FloatTensor)
-        neg_mask = neg_mask.cuda()
+        ## distance
         anchor_neg_dist = neg_mask * pairwise_dist
+        ## index of minimum
         _, min_idx = torch.min(anchor_neg_dist, 1)
+        ## hardest negative element
+        hard_neg = torch.index_select(self.remainder, 0, min_idx)
 
-        anchor_hardest_neg = torch.index_select(self.base.cuda(), 0, min_idx)
+        hard_triplet = (anchor, hard_pos, hard_neg)
 
-        # concatenate anchors, positives and negatives
-        hardest_triple_data = (anchor, anchor_hardest_pos, anchor_hardest_neg)
+        return hard_triplet
 
-        return hardest_triple_data
+    def construct_hard_pos_triplet(self, anchor, remainder):
+        """Construct hard triplet (only hard positive, negative are selected randomly) based on given anchor and remainder.
 
-    def pairwise_distances(self, anchor, base_excluded_anchor):
-        """Compute distance between anchor and base.
+        Anchors are selected from base data. Only hardest positives are calculated, corresponding negatives are randomly select (three times) based on harsedt positves.
 
-            1. Anchors are selected from base, and anchors must be excluded from base before computation. 
-            2. The result distance matrix contains elements, all of which are distances between different visual features.
+        Args:
+            anchor: anchor visual feature to construct hard triplet
+            remainder: used to select positive and negative visual features
+
+        Returns:
+            hard_pos_triple: triples constructed from anchor.
+
+        Raises:
+
+        """
+        # Distance Between Anchor and Remainder
+        pairwise_dist = self.pairwise_distances(anchor, remainder)
+
+        # Positive Data
+        ## positive mask to hide values that blong to different class
+        pos_mask = (self.get_positive_mask()).type(torch.FloatTensor)
+        ## distance between anchors and positives
+        anchor_pos_dist = pos_mask * pairwise_dist
+        ## index of maximum
+        _, max_idx = torch.max(anchor_pos_dist, 1)
+        ## final hardest positive element
+        hard_pos = torch.index_select(self.remainder, 0, max_idx)
+
+        # Negative Data
+        ## negative mask
+        neg_mask = (self.get_negative_mask()).type(torch.FloatTensor)
+        ## distance
+        anchor_neg_dist = neg_mask * pairwise_dist
+        ## random negative index
+        rand_idx = torch.rand.random()
+
+        ## first time negatives select
+        neg_1 = torch.index_select(self.remainder, 0, rand_idx)
+        ## second time negatives select
+        neg_2 = torch.index_select(self.remainder, 0, rand_idx)
+        ## third time negatives select
+        neg_3 = torch.index_select(self.remainder, 0, rand_idx)
+
+        anchor = anchor.repeat(3,1)
+        pos = pos.repeat(3,1)
+        neg = torch.cat((neg_1,neg_2,neg_3), dim=0)
+
+        hard_pos_triplet = (anchor, pos, neg)
+
+        return hard_pos_triplet
+
+    def construct_hard_neg_triplet(self, anchor, remainder):
+        """Construct hard triplet (only hard negative, positive are selected randomly) based on given anchor and remainder.
+
+        Anchors are selected from base data. Only hardest negatives are calculated, corresponding postives are randomly select (three times) based on harsedt negatives.
+
+        Args:
+            anchor: anchor visual feature to construct hard triplet
+            remainder: used to select positive and negative visual features
+
+        Returns:
+            hard_pos_triple: triples constructed from anchor.
+
+        Raises:
+
+        """
+        # Distance Between Anchor and Remainder
+        pairwise_dist = self.pairwise_distances(anchor, remainder)
+
+        # Negative Data
+        ## negative mask
+        neg_mask = (self.get_negative_mask()).type(torch.FloatTensor)
+        ## distance
+        anchor_neg_dist = neg_mask * pairwise_dist
+        ## index of minimum
+        _, min_idx = torch.min(anchor_neg_dist, 1)
+        ## hardest negative element
+        hard_neg = torch.index_select(self.remainder, 0, min_idx)
+
+        # Positive Data
+        ## positive mask to hide values that blong to different class
+        pos_mask = (self.get_positive_mask()).type(torch.FloatTensor)
+        ## distance between anchors and positives
+        anchor_pos_dist = pos_mask * pairwise_dist
+        ## random negative index
+        rand_idx = torch.rand.random()
+
+        ## first time positives select
+        pos_1 = torch.index_select(self.remainder, 0, rand_idx)
+        ## second time positives select
+        pos_2 = torch.index_select(self.remainder, 0, rand_idx)
+        ## third time positives select
+        pos_3 = torch.index_select(self.remainder, 0, rand_idx)
+
+        anchor = anchor.repeat(3,1)
+        pos = torch.cat((pos_1,pos_2,pos_3), dim=0)
+        neg = neg.repeat(3,1)
+
+        hard_pos_triplet = (anchor, pos, neg)
+
+        return hard_pos_triplet
+
+    def construct_semi_hard_triplet(self, anchor, remainder):
+        """
+        """
+        # Distance Between Anchor and Remainder
+        pairwise_dist = self.pairwise_distances(anchor, remainder)
+
+        return anchor, anchor_semi_hard_pos, anchor_semi_hard_neg
+
+    def construct_easy_triplet(self, anchor, remainder):
+        """
+        """
+        # Distance Between Anchor and Remainder
+        pairwise_dist = self.pairwise_distances(anchor, remainder)
+
+        return anchor, anchor_easy_pos, anchor_easy_neg
+
+    def next_batch(self, batch_size):
+        """Get a batch of triplets.
+
+        Args:
+            batch_size: number of triplets in a batch
+
+        Returns:
+            triplet_batch: a batch of triplets.
+        """
+        anchor, pos, neg = self.triplet_data
+
+        # Randomly Select a Batch of Triplet Data
+        rand_idx = (torch.randperm(anchor.size(0))[0:batch_size]).cuda()
+        batch_anchor = anchor[rand_idx]
+        batch_pos = pos[rand_idx]
+        batch_neg = neg[rand_idx]
+
+        triple_batch = torch.cat((batch_anchor, batch_pos, batch_neg), 0)
+
+        return triple_batch
+
+    def pairwise_distances(self, anchor, remainder):
+        """Compute distance between anchor and train data.
+
+            1. Anchors are selected from train data, and anchors must be excluded from train data before computation. 
+            2. The result distance matrix contains elements all of which are distances between different visual features.
 
         Args:
             anchor: anchor data
-            base_excluded_anchor: base data which does not contain anchor data.
+            remainder: train data which does not contain anchor data.
 
         Returns:
             distances: squared Euclidian distance between anchor and base
@@ -225,18 +377,16 @@ class Triple_Selector(object):
         Raises:
 
         """
-        # 1. 对anchor和base各自做自身的点积，然后取出各自的对角线，得到的就是各自向量的平方，然后anchor按列扩展，base按行扩展，得到形状和第2步一样的矩阵
-        # 2. anchor和base做点积
-        # 3. 将扩展后的矩阵减去2倍的第2步矩阵，即为anchor和base中除自身以外的向量的欧式距离
-
-        # Firstly get dot products
+        # Dot Products
         anchor_dot = torch.matmul(anchor, anchor.t())
-        base_excluded_anchor_dot = torch.matmul(base_excluded_anchor, base_excluded_anchor.t())
-        dot_product = torch.matmul(anchor, base_excluded_anchor.t())
+        train_excluded_anchor_dot = torch.matmul(remainder, remainder.t())
+        dot_product = torch.matmul(anchor, remainder.t())
 
+        # Diagnal Elements
         anchor_diag = torch.diag(anchor_dot)
-        base_excluded_anchor_diag = torch.diag(base_excluded_anchor_dot)
+        base_excluded_anchor_diag = torch.diag(train_excluded_anchor_dot)
 
+        # Distance Between Different Elements
         distances_matrix = anchor_diag.unsqueeze(1) - 2.0 * dot_product + base_excluded_anchor_diag.unsqueeze(0)
 
         return distances_matrix
@@ -244,40 +394,16 @@ class Triple_Selector(object):
     def get_positive_mask(self):
         """
         """
-        positive_mask = self.anchor_labels.unsqueeze(1) == self.base_excluded_anchor_labels.unsqueeze(0)
+        positive_mask = self.anchor_label.unsqueeze(1) == self.train_excluded_anchor_label.unsqueeze(0)
 
         return positive_mask
 
     def get_negative_mask(self):
         """
         """
-        negative_mask = ~(self.anchor_labels.unsqueeze(1) == self.base_excluded_anchor_labels.unsqueeze(0))
+        negative_mask = ~(self.anchor_label.unsqueeze(1) == self.remainder_label.unsqueeze(0))
 
         return negative_mask
-
-    def next_batch(self, batch_size, triple_type='hardest'):
-        """Get a batch of mixing triples.
-
-        Args:
-            triple_batch_size: size of batch.
-
-        Returns:
-            triple_batch: a batch of triples.
-        """
-        if triple_type == 'hardest':
-            anchor, pos, neg = self.hardest_triple
-
-            rand_idx = (torch.randperm(anchor.size(0))[0:batch_size]).cuda()
-            batch_anchor = anchor[rand_idx]
-            batch_pos = pos[rand_idx]
-            batch_neg = neg[rand_idx]
-
-            triple_batch = torch.cat((batch_anchor, batch_pos, batch_neg), 0)
-
-        else:
-            raise('Triple data type should be hardest')
-
-        return triple_batch
 
 class Logger(object):
     def __init__(self, filename):

@@ -155,7 +155,7 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # Data Sampling
-            input_vf, input_label, input_att, input_idex = sample(opt, data)
+            input_vf, input_label, input_att, input_index = sample(opt, data)
             input_vf_v = Variable(input_vf)
             input_att_v = Variable(input_att)
             input_label_v = Variable(input_label)
@@ -197,7 +197,7 @@ for epoch in range(opt.nepoch):
         netG.zero_grad()
 
         # Data Sampling
-        input_vf, input_label, input_att, input_idex = sample(opt, data)
+        input_vf, input_label, input_att, input_index = sample(opt, data)
         input_vf_v = Variable(input_vf)
         input_att_v = Variable(input_att)
         input_label_v = Variable(input_label)

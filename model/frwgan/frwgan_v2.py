@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #------------------------------------------------------------------------------#
-# 
+# 增加三元组的数量
 #------------------------------------------------------------------------------#
 
 from __future__ import print_function
@@ -24,7 +24,8 @@ sys.path.append('/home/xingyun/docker/mmcgan_torch030')
 from util import opts
 from util import tools
 from util import mlp
-from util.classifier import classifier, classifier2
+from util.classifier import classifier
+from util.classifier import classifier2
 
 #------------------------------------------------------------------------------#
 
@@ -76,16 +77,20 @@ print(netD)
 
 # Reverse Net Initialize
 if opt.r_hl == 1:
-    netR = mlp.MLP_1HL_Dropout_R(opt)
+    netR = mlp.MLP_1HL_Dropout_FR(opt)
 elif opt.r_hl == 2:
-    netR = mlp.MLP_2HL_Dropout_R(opt)
+    netR = mlp.MLP_2HL_Dropout_FR(opt)
 elif opt.r_hl == 3:
-    netR = mlp.MLP_3HL_Dropout_R(opt)
+    netR = mlp.MLP_3HL_Dropout_FR(opt)
 elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_R(opt)
+    netR = mlp.MLP_4HL_Dropout_FR(opt)
 else:
     raise('Initialize Error of Reverse Net')
 print(netR)
+
+# Fusion Net initialize
+netF = mlp.MLP_Dropout_Fusion(opt)
+print(netF)
 
 #------------------------------------------------------------------------------#
 
@@ -93,10 +98,12 @@ print(netR)
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerF = optim.Adam(netF.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
 # Loss Function
 cos_criterion = nn.CosineSimilarity()
 euc_criterion = nn.PairwiseDistance(p=2)
+triplet_criterion = nn.TripletMarginLoss(margin=1.0, p=2)
 
 #------------------------------------------------------------------------------#
 
@@ -108,26 +115,30 @@ if opt.cuda:
     netD.cuda()
     netG.cuda()
     netR.cuda()
+    netF.cuda()
 
     noise = noise.cuda()
 
     cos_criterion = cos_criterion.cuda()
     euc_criterion = euc_criterion.cuda()
+    triplet_criterion = triplet_criterion.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
 
 #------------------------------------------------------------------------------#
 
-# Store Best Results
+# store best result and corresponding epoch
 max_H = 0.0
 max_acc = 0.0
 corresponding_epoch = 0
 
 if opt.gzsl:
-    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |  ACC_seen  |    H    |')
+    print('EPOCH          |  D_cost  |  G_cost  |  F_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |  ACC_seen  |    H    |')
 else:
-    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |')
+    print('EPOCH          |  D_cost  |  G_cost  |  F_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |')
+
+#------------------------------------------------------------------------------#
 
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
@@ -164,8 +175,8 @@ for epoch in range(opt.nepoch):
             d_fake = d_fake.mean()
             d_fake.backward(one)
 
-            # Gradient Penalty
-            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_res, d_gen_vf_v.data, input_attv)
+            # Gradient Penalty 
+            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_res, d_gen_vf_v.data, input_att_v)
             gradient_penalty.backward()
 
             # Wasserstein Distance
@@ -201,14 +212,53 @@ for epoch in range(opt.nepoch):
         g_fake = g_fake.mean()
 
         # Generator Loss
-        G_cost = -g_fake # Decrease
+        G_cost = -g_fake
 
 #------------------------------------------------------------------------------#
 
-        # For Visualization
+        ################################
+        # FUSION TRAINING
+        ################################
+
+        # Triplet Data
+        anchor = g_gen_vf_v.data
+        anchor_label = input_label_v.data
+        anchor_index = input_index.squeeze()
+        triple_data = tools.Triplet_Selector(data, anchor, anchor_index)
+
+        # Fusion Net Training
+        for iter_f in range(opt.fusion_iter):
+            netF.zero_grad()
+
+            ## get a batch of triples
+            triple_batch = triple_data.next_batch(opt.batch_size, triple_type='hardest')
+            triple_batchv = Variable(triple_batch)
+
+            ## train F Net with triples
+            triple_hf = netF(triple_batchv)
+
+            ## triplet loss
+            anchor = triple_hf[0: opt.batch_size]
+            pos = triple_hf[opt.batch_size : opt.batch_size*2]
+            neg = triple_hf[opt.batch_size*2 : opt.batch_size*3]
+
+            triplet_loss = triplet_criterion(anchor, pos, neg)
+            triplet_loss = triplet_loss.mean()
+            triplet_loss.backward(retain_graph=True)
+
+            F_cost = triplet_loss
+            optimizerF.step()
+
+        # generate hidden feature after F training
+        gen_hf_v = netF(g_gen_vf_v)
+
+#------------------------------------------------------------------------------#
+
+        # for visualization
         train_vf = input_vf_v.data
         gen_vf = g_gen_vf_v.data
         label = input_label_v.data
+        gen_hf = gen_hf_v.data
 
 #------------------------------------------------------------------------------#
 
@@ -219,18 +269,19 @@ for epoch in range(opt.nepoch):
 
         # Train Reverse Net with Generated Visual Feature
         ## r training
-        syn_att_v = netR(g_gen_vf_v)
+        syn_att_v = netR(gen_hf_v)
         ## attribute consistency loss
-        R_cost = cos_criterion(syn_att_v, input_attv)
+        R_cost = cos_criterion(syn_att_v, input_att_v)
         R_cost = R_cost.mean()
 
+        # update r net
         R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
 
 #------------------------------------------------------------------------------#
 
         # FINAL GENERATOR LOSS
-        errG = G_cost - opt.r_weight * R_cost
+        errG = G_cost - opt.r_weight * R_cost + F_cost
         errG.backward()
         optimizerG.step()
 
@@ -247,7 +298,7 @@ for epoch in range(opt.nepoch):
 
         cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
 
         if cls_.H > max_H:
             max_H = cls_.H
@@ -256,6 +307,10 @@ for epoch in range(opt.nepoch):
             # embedding for visual features
             vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
+
+            # embedding for hidden features
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hfv.data.cpu().numpy())
+            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
 
             # label of features
             tsne_label = (label.cpu()).numpy()
@@ -266,7 +321,7 @@ for epoch in range(opt.nepoch):
         cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
         acc = cls_.acc
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
 
         if acc > max_acc:
             max_acc = acc
@@ -276,9 +331,12 @@ for epoch in range(opt.nepoch):
             vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
 
+            # embedding for hidden features
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
+            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
+
             # label of features
             tsne_label = (label.cpu()).numpy()
-
 
     netG.train()
 
@@ -289,7 +347,7 @@ else:
 
 # save visualization data
 exp_set = '/gzsl'
-model = '/rwgan'
+model = '/frwgan'
 exp_type = '/base/'
 
 root = '/home/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
@@ -298,3 +356,6 @@ np.save(file=root+'/label', arr=tsne_label) # 数据的标签
 
 np.save(file=root+'/vf_train_embed', arr=vf_train_embed) # 训练集的vf
 np.save(file=root+'/vf_gen_embed', arr=vf_gen_embed) # 生成的vf
+
+# np.save(file=root+'/hf_train_embed', arr=hf_train_embed)
+np.save(file=root+'/hf_gen_embed', arr=hf_gen_embed) # 生成的hf

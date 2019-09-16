@@ -76,6 +76,7 @@ if opt.netD != '':
 print(netD)
 
 # Reverse Net Initialize
+#! more delicate design needed
 if opt.r_hl == 1:
     netR = mlp.MLP_1HL_Dropout_FR(opt)
 elif opt.r_hl == 2:

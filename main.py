@@ -18,13 +18,13 @@ exp_set = '/gzsl'
 # model_type = '/rawgan'
 # model_type = '/mmc_rclswgan'
 # model_type = '/mmcfrwgan'
-model_type = '/rwgan'
-# model_type = '/frwgan'
+# model_type = '/rwgan'
+model_type = '/frwgan'
 # model_type = '/rrgan'
 # model_type = '/robgan'
 
-# exp_type = '/e4_v2'
-exp_type = '/base'
+exp_type = '/e6_v2'
+# exp_type = '/base'
 # exp_type = '/for_test'
 
 # datasets = ['/APY', '/AWA1', '/AWA2', '/CUB', '/FLO', '/SUN']

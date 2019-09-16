@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #------------------------------------------------------------------------------#
-# 增加三元组的数量
+# 增加三元组的数量，更新三元组挖掘方法
 #------------------------------------------------------------------------------#
 
 from __future__ import print_function
@@ -224,23 +224,23 @@ for epoch in range(opt.nepoch):
         anchor = g_gen_vf_v.data
         anchor_label = input_label_v.data
         anchor_index = input_index.squeeze()
-        triple_data = tools.Triplet_Selector(data, anchor, anchor_index)
+        triple_data = tools.Triplet_Selector(data, anchor, anchor_label, anchor_index)
 
         # Fusion Net Training
         for iter_f in range(opt.fusion_iter):
             netF.zero_grad()
 
             ## get a batch of triples
-            triple_batch = triple_data.next_batch(opt.batch_size, triple_type='hardest')
+            triple_batch = triple_data.next_batch(opt.triplet_num, triple_type='hardest')
             triple_batchv = Variable(triple_batch)
 
             ## train F Net with triples
             triple_hf = netF(triple_batchv)
 
             ## triplet loss
-            anchor = triple_hf[0: opt.batch_size]
-            pos = triple_hf[opt.batch_size : opt.batch_size*2]
-            neg = triple_hf[opt.batch_size*2 : opt.batch_size*3]
+            anchor = triple_hf[0: opt.triplet_num]
+            pos = triple_hf[opt.triplet_num : opt.triplet_num*2]
+            neg = triple_hf[opt.triplet_num*2 : opt.triplet_num*3]
 
             triplet_loss = triplet_criterion(anchor, pos, neg)
             triplet_loss = triplet_loss.mean()
@@ -348,7 +348,7 @@ else:
 # save visualization data
 exp_set = '/gzsl'
 model = '/frwgan'
-exp_type = '/base/'
+exp_type = '/e6_v2/'
 
 root = '/home/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
 

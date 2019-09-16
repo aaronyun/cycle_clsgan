@@ -61,7 +61,7 @@ def parse():
     # Fusion Net Setting
     parser.add_argument('--hfSize', type=int, default=512, help='hidden feature size(final layer size of fusion net)')
     parser.add_argument('--fusion_iter', type=int, default=2, help='how many times training fusion net in a epoch')
-    parser.add_argument('--triple_batch_size', type=int, default=128, help='batch size of Fusion Net training')
+    parser.add_argument('--triplet_num', type=int, default=128, help='batch size of Fusion Net training')
 
 #------------------------------------------------------------------------------#
 

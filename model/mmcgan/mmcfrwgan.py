@@ -15,7 +15,7 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt
 import numpy as np
 
-sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 
 from util import opts, tools, mlp
 from util.classifier import classifier, mm_classifier
@@ -387,4 +387,4 @@ data_to_plot = np.array(data_to_plot)
 # plt.plot(x, data_to_plot[:,5], 'k', label='seen class acc')
 
 # save figure
-# plt.savefig('/home/xingyun/docker/mmcgan_torch030/figure/' + opt.dataset + 'cost_fig.pdf')
+# plt.savefig('/data0/xingyun/docker/mmcgan_torch030/figure/' + opt.dataset + 'cost_fig.pdf')

@@ -12,7 +12,7 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
-sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 
 from util import tools, mlp, opts
 from util.classifier import classifier, classifier2

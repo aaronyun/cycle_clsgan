@@ -19,7 +19,7 @@ from torch.autograd import Variable
 import numpy as np
 from sklearn.manifold import TSNE
 
-sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 
 from util import opts
 from util import tools
@@ -76,6 +76,7 @@ if opt.netD != '':
 print(netD)
 
 # Reverse Net Initialize
+#! more delicate design needed
 if opt.r_hl == 1:
     netR = mlp.MLP_1HL_Dropout_FR(opt)
 elif opt.r_hl == 2:
@@ -155,7 +156,7 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # Data Sampling
-            input_vf, input_label, input_att, input_index = sample(opt, data)
+            input_vf, input_label, input_att, input_index = tools.sample(opt, data)
             input_vf_v = Variable(input_vf)
             input_att_v = Variable(input_att)
             input_label_v = Variable(input_label)
@@ -176,7 +177,7 @@ for epoch in range(opt.nepoch):
             d_fake.backward(one)
 
             # Gradient Penalty 
-            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_res, d_gen_vf_v.data, input_att_v)
+            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_vf_v.data, d_gen_vf_v.data, input_att_v)
             gradient_penalty.backward()
 
             # Wasserstein Distance
@@ -197,7 +198,7 @@ for epoch in range(opt.nepoch):
         netG.zero_grad()
 
         # Data Sampling
-        input_vf, input_label, input_att, input_index = sample(opt, data)
+        input_vf, input_label, input_att, input_index = tools.sample(opt, data)
         input_vf_v = Variable(input_vf)
         input_att_v = Variable(input_att)
         input_label_v = Variable(input_label)
@@ -271,8 +272,7 @@ for epoch in range(opt.nepoch):
         syn_att_v = netR(gen_hf_v)
         ## attribute consistency loss
         R_cost = cos_criterion(syn_att_v, input_att_v)
-        R_cost = R_cost.mean()
-
+        R_cost = R_cost.mean
         # update r net
         R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
@@ -349,7 +349,7 @@ exp_set = '/gzsl'
 model = '/frwgan'
 exp_type = '/base/'
 
-root = '/home/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
+root = '/data0/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
 
 np.save(file=root+'/label', arr=tsne_label) # 数据的标签
 

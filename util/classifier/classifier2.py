@@ -8,7 +8,7 @@ import torch.optim as optim
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler 
 
-sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 
 from util import tools
 

@@ -2,7 +2,7 @@ import random
 
 import torch
 from torch.autograd import Variable
-from torch.autograd import autograd
+import torch.autograd as autograd
 import h5py
 import numpy as np
 import scipy.io as sio
@@ -73,11 +73,15 @@ def calc_gradient_penalty(opt, netD, real_data, fake_data, input_att):
     return gradient_penalty
 
 def generate_syn_feature(opt, netG, classes, attribute, num):
+    """
+    """
     nclass = classes.size(0)
+
     syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
     syn_label = torch.LongTensor(nclass*num) 
     syn_att = torch.FloatTensor(num, opt.attSize)
     syn_noise = torch.FloatTensor(num, opt.nz)
+
     if opt.cuda:
         syn_att = syn_att.cuda()
         syn_noise = syn_noise.cuda()
@@ -149,15 +153,16 @@ class Triplet_Selector(object):
     Attributes:
 
     """
-    def __init__(self, dataset, anchor, anchor_label, anchor_index, triplet_type='hard'):
+    def __init__(self, opt, dataset, anchor, anchor_label, anchor_index, triplet_type='hard'):
         """
         """
+        self.cuda = opt.cuda
         # Initialize
         self.triplet_type = triplet_type
 
-        self.base = dataset.train_feature # train data containing anchor
-        self.base_labe = dataset.train_label
-        self.base_idx = [x for x in range(self.base.size(0))]
+        self.base = dataset.train_feature
+        self.base_label = dataset.train_label
+        self.base_index = torch.LongTensor([x for x in range(self.base.size(0))])# list
 
         self.anchor = anchor
         self.anchor_label = anchor_label
@@ -165,22 +170,31 @@ class Triplet_Selector(object):
 
         # Exclude Anchor from Train Data
         ## get index of remainder data
-        remainder_idx = torch.LongTensor([x for x in self.base_idx if x not in self.anchor_index])
+        self.remainder_idx = torch.LongTensor([x for x in self.base_index if x not in self.anchor_index])
         ## select features and lables by indexing
-        self.remainder = torch.index_select(self.base, 0, remainder_idx)
-        self.remainder_label = torch.index_select(base_label, 0, remainder_idx)
+        self.remainder = torch.index_select(self.base, 0, self.remainder_idx)
+        self.remainder_label = torch.index_select(self.base_label, 0, self.remainder_idx)
+
+        if self.cuda:
+            self.base, self.base_label, self.base_index = self.base.cuda(), self.base_label.cuda(), self.base_index.cuda()
+
+            self.remainder, self.remainder_label, self.remainder_idx = self.remainder.cuda(), self.remainder_label.cuda(), self.remainder_idx.cuda()
 
         # Get Triplet Data Based on Triplet Type
-        if self.triplet_type == 'hard':
-            self.triplet_data = self.construct_hard_triplet()
+        if self.triplet_type == 'hard_both':
+            self.triplet_data = self.construct_hard_both_triplet(anchor, self.remainder)
         elif self.triplet_type == 'semi_hard':
-            self.triplet_data = self.construct_semi_hard_triplet()
-        elif self.triplet_triple == 'easy':
-            self.triplet_data = self.construct_easy_triplet()
+            self.triplet_data = self.construct_semi_hard_triplet(anchor, self.remainder)
+        elif self.triplet_type == 'hard_pos':
+            self.triplet_data = self.construct_hard_pos_triplet(anchor, self.remainder)
+        elif self.triplet_type == 'hard_neg':
+            self.triplet_data = self.construct_hard_neg_triplet(anchor, self.remainder)
+        elif self.triplet_type == 'easy':
+            self.triplet_data = self.construct_easy_triplet(anchor, self.remainder)
         else:
             raise('Invalid triplet data type!')
 
-    def construct_hard_triplet(self, anchor, remainder):
+    def construct_hard_both_triplet(self, anchor, remainder):
         """Construct hard triplet based on given anchors and remainder.
 
         Anchors are selected from base data.
@@ -200,23 +214,23 @@ class Triplet_Selector(object):
 
         # Positive Data
         ## positive mask to hide values which blong to different class
-        pos_mask = (self.get_positive_mask()).type(torch.FloatTensor)
+        pos_mask = self.get_positive_mask()
         ## distance between anchors and positives
-        anchor_pos_dist = pos_mask * pairwise_dist
+        anchor_pos_dist = torch.mul(pos_mask, pairwise_dist)
         ## index of maximum
         _, max_idx = torch.max(anchor_pos_dist, 1)
         ## final hardest positive element
-        hard_pos = torch.index_select(self.remainder, 0, max_idx)
+        hard_pos = torch.index_select(remainder, 0, max_idx)
 
         # Negative Data
         ## negative mask
-        neg_mask = (self.get_negative_mask()).type(torch.FloatTensor)
+        neg_mask = self.get_negative_mask()
         ## distance
-        anchor_neg_dist = neg_mask * pairwise_dist
+        anchor_neg_dist = torch.mul(neg_mask, pairwise_dist)
         ## index of minimum
         _, min_idx = torch.min(anchor_neg_dist, 1)
         ## hardest negative element
-        hard_neg = torch.index_select(self.remainder, 0, min_idx)
+        hard_neg = torch.index_select(remainder, 0, min_idx)
 
         hard_triplet = (anchor, hard_pos, hard_neg)
 
@@ -242,34 +256,34 @@ class Triplet_Selector(object):
 
         # Positive Data
         ## positive mask to hide values that blong to different class
-        pos_mask = (self.get_positive_mask()).type(torch.FloatTensor)
+        pos_mask = self.get_positive_mask()
         ## distance between anchors and positives
-        anchor_pos_dist = pos_mask * pairwise_dist
+        anchor_pos_dist = torch.mul(pos_mask, pairwise_dist)
         ## index of maximum
         _, max_idx = torch.max(anchor_pos_dist, 1)
         ## final hardest positive element
-        hard_pos = torch.index_select(self.remainder, 0, max_idx)
+        hard_pos = torch.index_select(remainder, 0, max_idx)
 
         # Negative Data
         ## negative mask
-        neg_mask = (self.get_negative_mask()).type(torch.FloatTensor)
-        ## distance
-        anchor_neg_dist = neg_mask * pairwise_dist
-        ## random negative index
-        rand_idx = torch.rand.random()
+        neg_mask = self.get_negative_mask()
 
-        ## first time negatives select
-        neg_1 = torch.index_select(self.remainder, 0, rand_idx)
-        ## second time negatives select
-        neg_2 = torch.index_select(self.remainder, 0, rand_idx)
-        ## third time negatives select
-        neg_3 = torch.index_select(self.remainder, 0, rand_idx)
+        ## get index of negatives in remainder
+        rand_idx = self.get_rand_index(neg_mask)
+        ## negative select
+        batch_neg_1 = torch.index_select(remainder, 0, rand_idx)
+        ## get index of negatives in remainder
+        rand_idx = self.get_rand_index(neg_mask)
+        ## negative select
+        batch_neg_2 = torch.index_select(remainder, 0, rand_idx)
+        ## get index of negatives in remainder
+        rand_idx = self.get_rand_index(neg_mask)
+        ## negative select
+        batch_neg_3 = torch.index_select(remainder, 0, rand_idx)
 
-        anchor = anchor.repeat(3,1)
-        pos = pos.repeat(3,1)
-        neg = torch.cat((neg_1,neg_2,neg_3), dim=0)
+        neg = torch.cat((batch_neg_1, batch_neg_2, batch_neg_3), 0)
 
-        hard_pos_triplet = (anchor, pos, neg)
+        hard_pos_triplet = (anchor.repeat(3,1), hard_pos.repeat(3,1), neg)
 
         return hard_pos_triplet
 
@@ -293,39 +307,39 @@ class Triplet_Selector(object):
 
         # Negative Data
         ## negative mask
-        neg_mask = (self.get_negative_mask()).type(torch.FloatTensor)
+        neg_mask = self.get_negative_mask()
         ## distance
-        anchor_neg_dist = neg_mask * pairwise_dist
+        anchor_neg_dist = torch.mul(neg_mask, pairwise_dist)
         ## index of minimum
         _, min_idx = torch.min(anchor_neg_dist, 1)
         ## hardest negative element
-        hard_neg = torch.index_select(self.remainder, 0, min_idx)
+        hard_neg = torch.index_select(remainder, 0, min_idx)
 
         # Positive Data
         ## positive mask to hide values that blong to different class
-        pos_mask = (self.get_positive_mask()).type(torch.FloatTensor)
-        ## distance between anchors and positives
-        anchor_pos_dist = pos_mask * pairwise_dist
-        ## random negative index
-        rand_idx = torch.rand.random()
+        pos_mask = self.get_positive_mask()
+        
+        ## get index of positives in remainder
+        rand_idx = self.get_rand_index(pos_mask)
+        ## positives select
+        batch_pos_1 = torch.index_select(remainder, 0, rand_idx)
+        ## get index of positives in remainder
+        rand_idx = self.get_rand_index(pos_mask)
+        ## positives select
+        batch_pos_2 = torch.index_select(remainder, 0, rand_idx)
+        ## get index of positives in remainder
+        rand_idx = self.get_rand_index(pos_mask)
+        ## positives select
+        batch_pos_3 = torch.index_select(remainder, 0, rand_idx)
 
-        ## first time positives select
-        pos_1 = torch.index_select(self.remainder, 0, rand_idx)
-        ## second time positives select
-        pos_2 = torch.index_select(self.remainder, 0, rand_idx)
-        ## third time positives select
-        pos_3 = torch.index_select(self.remainder, 0, rand_idx)
+        pos = torch.cat((batch_pos_1, batch_pos_2, batch_pos_3), 0)
 
-        anchor = anchor.repeat(3,1)
-        pos = torch.cat((pos_1,pos_2,pos_3), dim=0)
-        neg = neg.repeat(3,1)
+        hard_neg_triplet = (anchor.repeat(3,1), pos, hard_neg.repeat(3,1))
 
-        hard_pos_triplet = (anchor, pos, neg)
-
-        return hard_pos_triplet
+        return hard_neg_triplet
 
     def construct_semi_hard_triplet(self, anchor, remainder):
-        """
+        """TBD
         """
         # Distance Between Anchor and Remainder
         pairwise_dist = self.pairwise_distances(anchor, remainder)
@@ -333,7 +347,7 @@ class Triplet_Selector(object):
         return anchor, anchor_semi_hard_pos, anchor_semi_hard_neg
 
     def construct_easy_triplet(self, anchor, remainder):
-        """
+        """TBD
         """
         # Distance Between Anchor and Remainder
         pairwise_dist = self.pairwise_distances(anchor, remainder)
@@ -352,7 +366,9 @@ class Triplet_Selector(object):
         anchor, pos, neg = self.triplet_data
 
         # Randomly Select a Batch of Triplet Data
-        rand_idx = (torch.randperm(anchor.size(0))[0:batch_size]).cuda()
+        rand_idx = (torch.randperm(anchor.size(0))[0:batch_size])
+        if self.cuda:
+            rand_idx = rand_idx.cuda()
         batch_anchor = anchor[rand_idx]
         batch_pos = pos[rand_idx]
         batch_neg = neg[rand_idx]
@@ -379,22 +395,26 @@ class Triplet_Selector(object):
         """
         # Dot Products
         anchor_dot = torch.matmul(anchor, anchor.t())
-        train_excluded_anchor_dot = torch.matmul(remainder, remainder.t())
+        remainder_dot = torch.matmul(remainder, remainder.t())
         dot_product = torch.matmul(anchor, remainder.t())
 
         # Diagnal Elements
         anchor_diag = torch.diag(anchor_dot)
-        base_excluded_anchor_diag = torch.diag(train_excluded_anchor_dot)
+        remainder_diag = torch.diag(remainder_dot)
 
         # Distance Between Different Elements
-        distances_matrix = anchor_diag.unsqueeze(1) - 2.0 * dot_product + base_excluded_anchor_diag.unsqueeze(0)
+        distances_matrix = anchor_diag.unsqueeze(1) - 2.0 * dot_product + remainder_diag.unsqueeze(0)
 
         return distances_matrix
 
     def get_positive_mask(self):
         """
         """
-        positive_mask = self.anchor_label.unsqueeze(1) == self.train_excluded_anchor_label.unsqueeze(0)
+        positive_mask = self.anchor_label.unsqueeze(1) == self.remainder_label.unsqueeze(0)
+        positive_mask = positive_mask.type(torch.FloatTensor)
+
+        if self.cuda:
+            positive_mask = positive_mask.cuda()
 
         return positive_mask
 
@@ -402,8 +422,37 @@ class Triplet_Selector(object):
         """
         """
         negative_mask = ~(self.anchor_label.unsqueeze(1) == self.remainder_label.unsqueeze(0))
+        negative_mask = negative_mask.type(torch.FloatTensor)
+
+        if self.cuda:
+            negative_mask = negative_mask.cuda()
 
         return negative_mask
+
+    def get_rand_index(self, mask):
+        """
+        """
+        idx = []
+        for i in range(mask.size(0)):
+            breaker = True
+            while breaker:
+                rand = random.randint(0, mask.size(1)-1)
+                if self.triplet_type == 'hard_pos':
+                    if mask[i][rand] == 1:
+                        idx.append(rand)
+                        breaker = False
+                elif self.triplet_type == 'hard_neg':
+                    if mask[i][rand] == 1:
+                        idx.append(rand)
+                        breaker = False
+                else:
+                    raise('Call Error!')
+
+        idx = torch.LongTensor(idx)
+        if self.cuda:
+            idx = torch.LongTensor(idx).cuda()
+
+        return idx
 
 class Logger(object):
     def __init__(self, filename):

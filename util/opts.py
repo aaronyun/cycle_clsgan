@@ -14,7 +14,7 @@ def parse():
 #------------------------------------------------------------------------------#
 
     # Data Specification
-    parser.add_argument('--dataroot', default='/data0/docker/xingyun/mmcgan/data')
+    parser.add_argument('--dataroot', default='/data0/docker/xingyun/datasets')
     parser.add_argument('--dataset', default='AWA2', help='which dataset, AWA2 as the default dataset')
     parser.add_argument('--matdataset', default=True, help='whether dataset in matlab format')
     parser.add_argument('--image_embedding', default='res101')
@@ -61,7 +61,7 @@ def parse():
     # Fusion Net Setting
     parser.add_argument('--hfSize', type=int, default=512, help='hidden feature size(final layer size of fusion net)')
     parser.add_argument('--fusion_iter', type=int, default=2, help='how many times training fusion net in a epoch')
-    parser.add_argument('--triple_batch_size', type=int, default=128, help='batch size of Fusion Net training')
+    parser.add_argument('--triplet_num', type=int, default=128, help='batch size of Fusion Net training')
 
 #------------------------------------------------------------------------------#
 

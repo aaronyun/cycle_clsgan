@@ -2,7 +2,7 @@ import os
 import shlex
 import subprocess
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
 # exp_set = '/zsl'
 exp_set = '/gzsl'

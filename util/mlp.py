@@ -465,6 +465,45 @@ class MLP_Dropout_Fusion(nn.Module):
         return _out
 
 #------------------------------------------------------------------------------#
+
+class AttributeNetwork(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(AttributeNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_size,hidden_size)
+        self.fc2 = nn.Linear(hidden_size,output_size)
+
+        self.relu = nn.ReLU(True)
+
+    def forward(self,x):
+
+        _in = x
+        x = self.fc1(_in)
+        x = self.relu(x)
+        x = self.fc2(x)
+        _out = self.relu(x)
+
+        return _out
+
+class RelationNetwork(nn.Module):
+    def __init__(self, input_size, hidden_size,):
+        super(RelationNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_size,hidden_size)
+        self.fc2 = nn.Linear(hidden_size,1)
+
+        self.relu = nn.ReLU(True)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self,x):
+
+        _in = x 
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        _out = self.sigmoid(x)
+
+        return _out
+
+#------------------------------------------------------------------------------#
 #TEST#
 class test_3_HL_R(nn.Module):
     def __init__(self, opt):

@@ -8,10 +8,10 @@ from __future__ import print_function
 import os
 import sys
 import random
+import time
 
 import torch
 import torch.nn as nn
-import torch.autograd as autograd 
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
@@ -19,7 +19,7 @@ from torch.autograd import Variable
 import numpy as np
 from sklearn.manifold import TSNE
 
-sys.path.append('/home/xingyun/docker/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 
 from util import opts
 from util import tools
@@ -155,7 +155,7 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # Data Sampling
-            input_vf, input_label, input_att, input_index = sample(opt, data)
+            input_vf, input_label, input_att, input_index = tools.sample(opt, data)
             input_vf_v = Variable(input_vf)
             input_att_v = Variable(input_att)
             input_label_v = Variable(input_label)
@@ -176,7 +176,7 @@ for epoch in range(opt.nepoch):
             d_fake.backward(one)
 
             # Gradient Penalty 
-            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_res, d_gen_vf_v.data, input_att_v)
+            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_vf_v.data, d_gen_vf_v.data, input_att_v)
             gradient_penalty.backward()
 
             # Wasserstein Distance
@@ -197,7 +197,7 @@ for epoch in range(opt.nepoch):
         netG.zero_grad()
 
         # Data Sampling
-        input_vf, input_label, input_att, input_index = sample(opt, data)
+        input_vf, input_label, input_att, input_index = tools.sample(opt, data)
         input_vf_v = Variable(input_vf)
         input_att_v = Variable(input_att)
         input_label_v = Variable(input_label)
@@ -224,14 +224,15 @@ for epoch in range(opt.nepoch):
         anchor = g_gen_vf_v.data
         anchor_label = input_label_v.data
         anchor_index = input_index.squeeze()
-        triple_data = tools.Triplet_Selector(data, anchor, anchor_label, anchor_index)
+
+        triplet = tools.Triplet_Selector(opt, data, anchor, anchor_label, anchor_index, triplet_type='hard_pos')
 
         # Fusion Net Training
         for iter_f in range(opt.fusion_iter):
             netF.zero_grad()
 
             ## get a batch of triples
-            triple_batch = triple_data.next_batch(opt.triplet_num, triple_type='hardest')
+            triple_batch = triplet.next_batch(opt.triplet_num)
             triple_batchv = Variable(triple_batch)
 
             ## train F Net with triples

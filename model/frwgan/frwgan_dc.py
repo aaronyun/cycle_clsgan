@@ -15,6 +15,7 @@ import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
+from torch.utils.data import TensorDataset, DataLoader
 # from torch.optim.lr_scheduler import StepLR
 
 import numpy as np
@@ -25,8 +26,9 @@ sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 from util import opts
 from util import tools
 from util import mlp
-from util.classifier import classifier
-from util.classifier import classifier2
+from util.eval import classifier
+from util.eval import classifier2
+from util.eval import rn_eval
 
 #------------------------------------------------------------------------------#
 
@@ -112,7 +114,6 @@ optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerF = optim.Adam(netF.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerAtt = optim.Adam(netAtt.parameters(), lr=1e-5, weight_decay=1e-5)
 optimizerRN = optim.Adam(netRN.parameters(), lr=1e-5, weight_decay=1e-5)
-
 
 # Loss Function
 cos_criterion = nn.CosineSimilarity()
@@ -308,21 +309,59 @@ for epoch in range(opt.nepoch):
         ################################
         # RELATION NET TRAINING
         ################################
+        print('relation net training')
+        netAtt.zero_grad()
+        netRN.zero_grad()
+
+        # Data Preperation
+        ## generate data for unseen class
         syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
+        ## 
+        train_X = torch.cat((data.train_feature, syn_feature), 0)
+        train_Y = torch.cat((data.train_label, syn_label), 0)
+        ## data iterator
+        train_data = TensorDataset(train_X, train_Y)
+        train_loader = DataLoader(train_data, batch_size=opt.batch_size,shuffle=True)
 
-        rn_train_vf = torch.cat((data.train_feature, syn_feature), 0)
-        rn_train_label = torch.cat((data.train_label, syn_label), 0)
-        one_hot_lable = torch.zeros(opt.batch_size, opt.nclass_all).scatter_(1, rn_train_label.view(-1, 1), 1)
-        rn_train_att = torch.index_select(data.train_features, rn_train_label)
+        # Get a Batch of Data
+        batch_features, batch_labels = train_loader.__iter__().next()
 
-        att_mid_v = netAtt(rn_train_att)
-        mid = torch.cat(att_mid_v.data, rn_train_vf)
+        sample_labels = [] 
+        for label in batch_labels.numpy():
+            if label not in sample_labels:
+                sample_labels.append(label)
+        
+        sample_attributes = torch.Tensor([data.attribute[i] for i in sample_labels]).squeeze(1)
+        class_num = sample_attributes.shape[0]
 
-        rn_out_v = netRN(mid)
+        batch_features = Variable(batch_features).float()  # 32*1024
+        sample_features = netAtt(Variable(sample_attributes)) # k*312
 
-        rn_loss = mse_criterion(rn_out, rn_label)
-        rn_loss.backward()
-        rn_loss.step()
+        sample_features_ext = sample_features.unsqueeze(0).repeat(opt.batch_size, 1, 1)
+        batch_features_ext = batch_features.unsqueeze(0).repeat(class_num, 1, 1)
+        batch_features_ext = torch.transpose(batch_features_ext, 0, 1)
+        relation_pairs = torch.cat((sample_features_ext, batch_features_ext), 2).view(-1, 4096)
+
+        relations = netRN(relation_pairs).view(-1, class_num)
+
+        # re-build batch_labels according to sample_labels
+        sample_labels = np.array(sample_labels)
+        re_batch_labels = []
+        for label in batch_labels.numpy():
+            index = np.argwhere(sample_labels==label)
+            re_batch_labels.append(index[0][0])
+        re_batch_labels = torch.LongTensor(re_batch_labels)
+
+        one_hot_labels = Variable(torch.zeros(opt.batch_size, class_num).scatter_(1, re_batch_labels.view(-1, 1), 1))
+        if opt.cuda:
+            one_hot_labels = one_hot_labels.cuda()
+
+        # loss
+        loss = mse_criterion(relations, one_hot_labels)
+        loss.backward()
+
+        optimizerAtt.step()
+        optimizerRN.step()
 
         netG.train()
 
@@ -335,67 +374,53 @@ for epoch in range(opt.nepoch):
     netAtt.eval()
     netRN.eval()
 
-    
+    if opt.gzsl:
+        acc_unseen = rn_eval.compute_accuracy(data.test_unseen_feature, data.test_unseen_label, np.arange(50), data.attributes)
+        acc_seen = rn_eval.compute_accuracy(data.test_seen_feature, data.test_seen_label, np.arange(50), data.attributes)
+
+        H = 2*acc_seen*acc_unseen / (acc_seen+acc_unseen)
+
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc_unseen, acc_seen, H))
+
+        if H > max_H:
+            max_H = H
+            corresponding_epoch = epoch
+
+            # embedding for visual features
+            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
+            vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
+
+            # embedding for hidden features
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hfv.data.cpu().numpy())
+            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
+
+            # label of features
+            tsne_label = (label.cpu()).numpy()
+
+    else:
+        acc = compute_accuracy(data.test_feature, data.test_label, test_id, torch.index_select(data.attribute, 0, data.test_label)) #? test_id 需要传入
+
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
+
+        if acc > max_acc:
+            max_acc = acc
+            corresponding_epoch = epoch
+
+            # embedding for visual features
+            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
+            vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
+
+            # embedding for hidden features
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
+            hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
+
+            # label of features
+            tsne_label = (label.cpu()).numpy()
 
     netAtt.train()
     netRN.train()
 
 #------------------------------------------------------------------------------#
-
-#------------------------------------------------------------------------------#
-
-    netG.eval()
-
-    # if opt.gzsl:
-    #     syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
-
-    #     train_X = torch.cat((data.train_feature, syn_feature), 0)
-    #     train_Y = torch.cat((data.train_label, syn_label), 0)
-    #     nclass = opt.nclass_all
-
-    #     cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
-
-    #     print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
-
-    #     if cls_.H > max_H:
-    #         max_H = cls_.H
-    #         corresponding_epoch = epoch
-
-    #         # embedding for visual features
-    #         vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
-    #         vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
-
-    #         # embedding for hidden features
-    #         # hf_train_embed = TSNE(n_components=3).fit_transform(train_hfv.data.cpu().numpy())
-    #         hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
-
-    #         # label of features
-    #         tsne_label = (label.cpu()).numpy()
-
-    # else:
-    #     syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
-
-    #     cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
-    #     acc = cls_.acc
-
-    #     print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
-
-    #     if acc > max_acc:
-    #         max_acc = acc
-    #         corresponding_epoch = epoch
-
-    #         # embedding for visual features
-    #         vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
-    #         vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
-
-    #         # embedding for hidden features
-    #         # hf_train_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
-    #         hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
-
-    #         # label of features
-    #         tsne_label = (label.cpu()).numpy()
-
-    netG.train()
 
 if opt.gzsl:
     print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
@@ -405,7 +430,7 @@ else:
 # save visualization data
 exp_set = '/gzsl'
 model = '/frwgan'
-exp_type = '/base/'
+exp_type = '/e7_rn/'
 
 root = '/data0/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
 

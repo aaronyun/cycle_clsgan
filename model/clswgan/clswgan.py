@@ -15,7 +15,7 @@ from torch.autograd import Variable
 sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 
 from util import tools, mlp, opts
-from util.classifier import classifier, classifier2
+from util.eval import classifier, classifier2
 
 opt = opts.parse()
 print(opt)

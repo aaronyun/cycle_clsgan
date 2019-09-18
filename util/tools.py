@@ -72,15 +72,15 @@ def calc_gradient_penalty(opt, netD, real_data, fake_data, input_att):
 
     return gradient_penalty
 
-def generate_syn_feature(opt, netG, classes, attribute, num):
+def generate_syn_feature(opt, netG, classes, all_attribute, num_perclass):
     """
     """
     nclass = classes.size(0)
 
-    syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
-    syn_label = torch.LongTensor(nclass*num) 
-    syn_att = torch.FloatTensor(num, opt.attSize)
-    syn_noise = torch.FloatTensor(num, opt.nz)
+    syn_feature = torch.FloatTensor(nclass*num_perclass, opt.resSize)
+    syn_label = torch.LongTensor(nclass*num_perclass) 
+    syn_att = torch.FloatTensor(num_perclass, opt.attSize)
+    syn_noise = torch.FloatTensor(num_perclass, opt.nz)
 
     if opt.cuda:
         syn_att = syn_att.cuda()
@@ -88,17 +88,17 @@ def generate_syn_feature(opt, netG, classes, attribute, num):
 
     for i in range(nclass):
         iclass = classes[i]
-        iclass_att = attribute[iclass]
+        iclass_att = all_attribute[iclass]
 
         # temp = iclass_att.clone()
-        # temp = temp.repeat(num, 1)
+        # temp = temp.repeat(num_perclass, 1)
         # syn_att.copy_(temp)
-        syn_att.copy_(iclass_att.repeat(num, 1))
-
+        syn_att.copy_(iclass_att.repeat(num_perclass, 1))
         syn_noise.normal_(0, 1)
+
         output = netG(Variable(syn_noise, requires_grad=False), Variable(syn_att, requires_grad=False))
-        syn_feature.narrow(0, i*num, num).copy_(output.data.cpu())
-        syn_label.narrow(0, i*num, num).fill_(iclass)
+        syn_feature.narrow(0, i*num_perclass, num_perclass).copy_(output.data.cpu())
+        syn_label.narrow(0, i*num_perclass, num_perclass).fill_(iclass)
 
     return syn_feature, syn_label
 

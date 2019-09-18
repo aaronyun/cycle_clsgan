@@ -504,28 +504,3 @@ class RelationNetwork(nn.Module):
         return _out
 
 #------------------------------------------------------------------------------#
-#TEST#
-class test_3_HL_R(nn.Module):
-    def __init__(self, opt):
-        super(test_3_HL_R, self).__init__()
-        self.fc1 = nn.Linear(opt.hfSize, 1024)
-        self.fc2 = nn.Linear(1024, 512)
-        self.fc3 = nn.Linear(512, 256)
-        self.fc4 = nn.Linear(256, opt.attSize)
-
-        self.relu = nn.ReLU(True)
-        self.lrelu = nn.LeakyReLU(0.2, True)
-
-        self.drop = nn.Dropout(p=opt.drop_rate)
-
-    def forward(self, vf):
-        _in = vf
-        h = self.lrelu(self.fc1(_in))
-        h = self.drop(h)
-        h = self.lrelu(self.fc2(h))
-        h = self.drop(h)
-        h = self.lrelu(self.fc3(h))
-        h = self.drop(h)
-        _out = self.relu(self.fc4(h))
-
-        return _out

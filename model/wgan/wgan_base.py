@@ -25,7 +25,7 @@ sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 from util import tools
 from util import mlp
 from util import opts
-from util.classifier import classifier, classifier2
+from util.eval import classifier, classifier2
 
 #------------------------------------------------------------------------------#
 

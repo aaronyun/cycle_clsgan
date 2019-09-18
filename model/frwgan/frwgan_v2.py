@@ -24,8 +24,8 @@ sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 from util import opts
 from util import tools
 from util import mlp
-from util.classifier import classifier
-from util.classifier import classifier2
+from util.eval import classifier
+from util.eval import classifier2
 
 #------------------------------------------------------------------------------#
 
@@ -351,7 +351,7 @@ exp_set = '/gzsl'
 model = '/frwgan'
 exp_type = '/e6_v2/'
 
-root = '/home/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
+root = '/data0/docker/xingyun/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
 
 np.save(file=root+'/label', arr=tsne_label) # 数据的标签
 
@@ -360,3 +360,5 @@ np.save(file=root+'/vf_gen_embed', arr=vf_gen_embed) # 生成的vf
 
 # np.save(file=root+'/hf_train_embed', arr=hf_train_embed)
 np.save(file=root+'/hf_gen_embed', arr=hf_gen_embed) # 生成的hf
+
+

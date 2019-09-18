@@ -18,7 +18,7 @@ import numpy as np
 sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
 
 from util import opts, tools, mlp
-from util.classifier import classifier, mm_classifier
+from util.eval import classifier, mm_classifier
 
 # parameters
 opt = opts.parse()

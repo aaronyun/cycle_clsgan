@@ -2,7 +2,7 @@ import os
 import shlex
 import subprocess
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 
 # exp_set = '/zsl'
 exp_set = '/gzsl'
@@ -23,12 +23,12 @@ model_type = '/frwgan'
 # model_type = '/rrgan'
 # model_type = '/robgan'
 
-exp_type = '/e7_rn'
+exp_type = '/e6_v2'
 # exp_type = '/base'
 # exp_type = '/for_test'
 
-# datasets = ['/APY', '/AWA1', '/AWA2', '/CUB', '/FLO', '/SUN']
-datasets = ['/CUB']
+datasets = ['/APY', '/AWA1', '/AWA2', '/CUB', '/FLO', '/SUN']
+# datasets = ['/CUB']
 
 print('\n')
 print("########## EXPERIMENT SETTING: %s ##########" % exp_set)
@@ -54,8 +54,8 @@ for dataset in datasets:
             print('----------')
             print('%s #Begin!#' % file_path)
             print('----------')
-            # subprocess.run(args, stdout=result_f)
-            subprocess.run(args)
+            subprocess.run(args, stdout=result_f)
+            # subprocess.run(args)
             print('----------')
             print('%s #Done!#' % file_path)
             print('----------')

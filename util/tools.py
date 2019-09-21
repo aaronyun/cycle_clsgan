@@ -77,9 +77,9 @@ def generate_syn_feature(opt, netG, classes, all_attribute, num_perclass):
     """
     nclass = classes.size(0)
 
-    syn_feature = torch.FloatTensor(nclass*num_perclass, opt.resSize)
+    syn_feature = torch.FloatTensor(nclass*num_perclass, opt.res_size)
     syn_label = torch.LongTensor(nclass*num_perclass) 
-    syn_att = torch.FloatTensor(num_perclass, opt.attSize)
+    syn_att = torch.FloatTensor(num_perclass, opt.att_size)
     syn_noise = torch.FloatTensor(num_perclass, opt.nz)
 
     if opt.cuda:
@@ -90,9 +90,6 @@ def generate_syn_feature(opt, netG, classes, all_attribute, num_perclass):
         iclass = classes[i]
         iclass_att = all_attribute[iclass]
 
-        # temp = iclass_att.clone()
-        # temp = temp.repeat(num_perclass, 1)
-        # syn_att.copy_(temp)
         syn_att.copy_(iclass_att.repeat(num_perclass, 1))
         syn_noise.normal_(0, 1)
 

@@ -19,8 +19,8 @@ def parse():
     parser.add_argument('--matdataset', default=True, help='whether dataset in matlab format')
     parser.add_argument('--image_embedding', default='res101')
     parser.add_argument('--class_embedding', default='att')
-    parser.add_argument('--resSize', type=int, default=2048)
-    parser.add_argument('--attSize', type=int, default=85)
+    parser.add_argument('--res_size', type=int, default=2048)
+    parser.add_argument('--att_size', type=int, default=85)
     parser.add_argument('--nclass_all', type=int, default=200, help='number of all classes')
     parser.add_argument('--ntrain_class', type=int, default=40, help='number of train classes') #! NEW
 
@@ -40,28 +40,38 @@ def parse():
     # Generator Setting
     parser.add_argument('--netG', default='', help='path to netG (to continue training')
     parser.add_argument('--netG_name', default='')
-    parser.add_argument('--ngh', type=int, default=4096, help='size of the hidden layer in generator')
+    parser.add_argument('--gen_hu', type=int, default=4096, help='size of the hidden layer in generator')
     parser.add_argument('--nz', type=int, default=85, help='size of the noise z vector')
 
     # Discriminator Setting
     parser.add_argument('--netD', default='', help='path to netD (to continue training')
     parser.add_argument('--netD_name', default='')
-    parser.add_argument('--ndh', type=int, default=1024, help='size of the hidden layer in discriminator')
+    parser.add_argument('--dis_hu', type=int, default=1024, help='size of the hidden layer in discriminator')
 
     # Reverse Net Setting
     # parser.add_argument('--r_iteration', type=int, default=3, help='the pretraining time of R net')
     parser.add_argument('--r_hl', type=int, default=1, help='how many hidden layers in R net')
-    parser.add_argument('--nrh1', type=int, default=1024, help='size of the first layer in R net')
-    parser.add_argument('--nrh2', type=int, default=512, help='size of the second layer in R net')
-    parser.add_argument('--nrh3', type=int, default=256, help='size of the third layer in R net')
-    parser.add_argument('--nrh4', type=int, default=128, help='size of the fourth layer in R net')
+    parser.add_argument('--re_hl1', type=int, default=1024, help='size of the first layer in R net')
+    parser.add_argument('--re_hl2', type=int, default=512, help='size of the second layer in R net')
+    parser.add_argument('--re_hl3', type=int, default=256, help='size of the third layer in R net')
+    parser.add_argument('--re_hl4', type=int, default=128, help='size of the fourth layer in R net')
     parser.add_argument('--drop_rate', type=float, default=0.2, help='the rate of unit to drop in R net')
     parser.add_argument('--r_weight', type=float, default=1, help='weight of att generate loss')
 
     # Fusion Net Setting
-    parser.add_argument('--hfSize', type=int, default=512, help='hidden feature size(final layer size of fusion net)')
+    parser.add_argument('--hf_size', type=int, default=512, help='hidden feature size(final layer size of fusion net)')
     parser.add_argument('--fusion_iter', type=int, default=2, help='how many times training fusion net in a epoch')
     parser.add_argument('--triplet_num', type=int, default=128, help='batch size of Fusion Net training')
+    parser.add_argument('--fusion_hu', type=int, default=1024, help='size of hidden units in fusion net')
+
+#------------------------------------------------------------------------------#
+
+    # Relation Net Setting
+    parser.add_argument('--rn_hu', type=int, default=1200, help='hidden units of relation net, different dataset has different number of units')
+    parser.add_argument('--an_hu', type=int, default=1200, help='hidden units of attribute net, different datset has different number of units')
+    parser.add_argument('--rn_episodes', type=int, default=200000, help='times to train relation net in a epoch')    
+    parser.add_argument('--netAtt', default='', help='path to netAtt (to continue training')
+    parser.add_argument('--netRN', default='', help='path to netRN (to continue training')
 
 #------------------------------------------------------------------------------#
 

@@ -19,7 +19,7 @@ from torch.autograd import Variable
 import numpy as np
 from sklearn.manifold import TSNE
 
-sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 
 from util import opts
 from util import tools
@@ -50,6 +50,8 @@ torch.manual_seed(opt.manualSeed)
 if opt.cuda:
     torch.cuda.manual_seed_all(opt.manualSeed)
 
+#------------------------------------------------------------------------------#
+
 # Running Environment Setting
 cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
@@ -64,16 +66,20 @@ print("# of training samples: ", data.ntrain)
 #------------------------------------------------------------------------------#
 
 # Generator Initialize
-netG = mlp.MLP_G(opt)
+netG = mlp.Gen(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 # Discriminator Initialize
-netD = mlp.MLP_CRITIC(opt)
+netD = mlp.Dis(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
+
+# Fusion Net initialize
+netF = mlp.FusionNet(opt)
+print(netF)
 
 # Reverse Net Initialize
 if opt.r_hl == 1:
@@ -83,14 +89,10 @@ elif opt.r_hl == 2:
 elif opt.r_hl == 3:
     netR = mlp.MLP_3HL_Dropout_FR(opt)
 elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_FR(opt)
+    netR = mlp.MLP_3HL_Dropout_FR(opt)
 else:
     raise('Initialize Error of Reverse Net')
 print(netR)
-
-# Fusion Net initialize
-netF = mlp.MLP_Dropout_Fusion(opt)
-print(netF)
 
 #------------------------------------------------------------------------------#
 
@@ -232,16 +234,16 @@ for epoch in range(opt.nepoch):
             netF.zero_grad()
 
             ## get a batch of triples
-            triple_batch = triplet.next_batch(opt.triplet_num)
-            triple_batchv = Variable(triple_batch)
+            triplet_batch = triplet.next_batch(opt.triplet_num)
+            triplet_batchv = Variable(triplet_batch)
 
             ## train F Net with triples
-            triple_hf = netF(triple_batchv)
+            triplet_hf = netF(triplet_batchv)
 
             ## triplet loss
-            anchor = triple_hf[0: opt.triplet_num]
-            pos = triple_hf[opt.triplet_num : opt.triplet_num*2]
-            neg = triple_hf[opt.triplet_num*2 : opt.triplet_num*3]
+            anchor = triplet_hf[0: opt.triplet_num]
+            pos = triplet_hf[opt.triplet_num : opt.triplet_num*2]
+            neg = triplet_hf[opt.triplet_num*2 : opt.triplet_num*3]
 
             triplet_loss = triplet_criterion(anchor, pos, neg)
             triplet_loss = triplet_loss.mean()
@@ -274,7 +276,6 @@ for epoch in range(opt.nepoch):
         ## attribute consistency loss
         R_cost = cos_criterion(syn_att_v, input_att_v)
         R_cost = R_cost.mean()
-
         # update r net
         R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
@@ -351,7 +352,7 @@ exp_set = '/gzsl'
 model = '/frwgan'
 exp_type = '/e6_v2/'
 
-root = '/data0/docker/xingyun/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
+root = '/data0/docker/xingyun/projects/mmcgan/fig' + exp_set + model + exp_type + opt.dataset
 
 np.save(file=root+'/label', arr=tsne_label) # 数据的标签
 

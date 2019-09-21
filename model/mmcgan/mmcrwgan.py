@@ -16,7 +16,7 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt
 import numpy as np
 
-sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 
 from util import opts, tools, mlp
 from util.eval import classifier, mm_classifier
@@ -50,24 +50,24 @@ data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
 # initialize neural nets
-netG = mlp.MLP_G(opt)
+netG = mlp.G(opt.att_size + opt.nz, opt.ngh, opt.res_size)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
-netD = mlp.MLP_CRITIC(opt)
+netD = mlp.Dis(opt.res_size + opt.att_size, opt.ndh)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
 if opt.r_hl == 1:
-    netR = mlp.MLP_1HL_Dropout_R(opt)
+    netR = mlp.MLP_1HL_Dropout_R(opt.res_size, 4096, opt.att_size)
 elif opt.r_hl == 2:
-    netR = mlp.MLP_2HL_Dropout_R(opt)
+    netR = mlp.MLP_2HL_Dropout_R(opt.res_size, opt.nrh1, opt.nrh2, opt.att_size)
 elif opt.r_hl == 3:
-    netR = mlp.MLP_3HL_Dropout_R(opt)
+    netR = mlp.MLP_3HL_Dropout_R(opt.res_size, opt.nrh1, opt.nrh2, opt.nrh3, opt.att_size)
 elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_R(opt)
+    netR = mlp.MLP_4HL_Dropout_R(opt.res_size, opt.nrh1, opt.nrh2, opt.nrh3, opt.nrh4, opt.att_size)
 else:
     raise('wrong value of r_hl')
 print(netR)
@@ -77,8 +77,8 @@ r_criterion = nn.CosineSimilarity()
 # r_criterion = nn.PairwiseDistance()
 
 # create input tensor
-input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
-input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
+input_res = torch.FloatTensor(opt.batch_size, opt.res_size)
+input_att = torch.FloatTensor(opt.batch_size, opt.att_size)
 input_label = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
 
@@ -108,9 +108,9 @@ def sample():
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
 
-    syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
+    syn_feature = torch.FloatTensor(nclass*num, opt.res_size)
     syn_label = torch.LongTensor(nclass*num) 
-    syn_att = torch.FloatTensor(num, opt.attSize)
+    syn_att = torch.FloatTensor(num, opt.att_size)
     syn_noise = torch.FloatTensor(num, opt.nz)
 
     if opt.cuda:

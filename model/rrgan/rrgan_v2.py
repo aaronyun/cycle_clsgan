@@ -16,7 +16,7 @@ from torch.autograd import Variable
 import numpy as np
 from sklearn.manifold import TSNE
 
-sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 
 from util import opts
 from util import tools
@@ -63,32 +63,32 @@ print("# of training samples: ", data.ntrain)
 #------------------------------------------------------------------------------#
 
 # Generator initialize
-netG = mlp.MLP_G(opt)
+netG = mlp.G(opt.att_size + opt.nz, opt.ngh, opt.res_size)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 # Discriminator initialize
-netD = mlp.robDis(opt)
+netD = mlp.robDis(opt.res_size + opt.att_size, opt.ndh, opt.ntrain_class)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
 # Reverse net initialize
 if opt.r_hl == 1:
-    netR = mlp.MLP_1HL_Dropout_FR(opt)
+    netR = mlp.MLP_1HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.att_size)
 elif opt.r_hl == 2:
-    netR = mlp.MLP_2HL_Dropout_FR(opt)
+    netR = mlp.MLP_2HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.nrh2, opt.att_size)
 elif opt.r_hl == 3:
-    netR = mlp.MLP_3HL_Dropout_FR(opt)
+    netR = mlp.MLP_3HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.nrh2, opt.nrh3, opt.att_size)
 elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_FR(opt)
+    netR = mlp.MLP_3HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.nrh2, opt.nrh3, opt.nrh4, opt.att_size)
 else:
     raise('Initialize Error of R')
 print(netR)
 
 # Fusion net initialize
-netF = mlp.MLP_Dropout_Fusion(opt)
+netF = mlp.FusionNet(opt.res_size, 1024, opt.hfSize)
 print(netF)
 
 #------------------------------------------------------------------------------#
@@ -107,8 +107,8 @@ triplet_criterion = nn.TripletMarginLoss(margin=1.0, p=2)
 #------------------------------------------------------------------------------#
 
 # create input tensor
-input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
-input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
+input_res = torch.FloatTensor(opt.batch_size, opt.res_size)
+input_att = torch.FloatTensor(opt.batch_size, opt.att_size)
 input_label = torch.LongTensor(opt.batch_size)
 input_index = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
@@ -150,9 +150,9 @@ def sample():
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
-    syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
+    syn_feature = torch.FloatTensor(nclass*num, opt.res_size)
     syn_label = torch.LongTensor(nclass*num) 
-    syn_att = torch.FloatTensor(num, opt.attSize)
+    syn_att = torch.FloatTensor(num, opt.att_size)
     syn_noise = torch.FloatTensor(num, opt.nz)
     if opt.cuda:
         syn_att = syn_att.cuda()

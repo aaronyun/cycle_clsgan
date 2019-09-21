@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 import numpy as np
 
-sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 
 from util import opts
 from util import tools
@@ -66,32 +66,32 @@ print("# of training samples: ", data.ntrain)
 #------------------------------------------------------------------------------#
 
 # Generator initialize
-netG = mlp.MLP_G(opt)
+netG = mlp.Gen(opt.att_size + opt.nz, opt.ngh, opt.res_size)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 # Discriminator initialize
-netD = mlp.MLP_CRITIC(opt)
+netD = mlp.Dis(opt.res_size + opt.att_size, opt.ndh)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
 # Reverse net initialize
 if opt.r_hl == 1:
-    netR = mlp.MLP_1HL_Dropout_FR(opt)
+    netR = mlp.MLP_1HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.att_size)
 elif opt.r_hl == 2:
-    netR = mlp.MLP_2HL_Dropout_FR(opt)
+    netR = mlp.MLP_2HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.nrh2, opt.att_size)
 elif opt.r_hl == 3:
-    netR = mlp.MLP_3HL_Dropout_FR(opt)
+    netR = mlp.MLP_3HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.nrh2, opt.nrh3, opt.att_size)
 elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_FR(opt)
+    netR = mlp.MLP_3HL_Dropout_FR(opt.hfSize, opt.nrh1, opt.nrh2, opt.nrh3, opt.nrh4, opt.att_size)
 else:
     raise('Initialize Error of R')
 print(netR)
 
 # Fusion net initialize
-netF = mlp.MLP_Dropout_Fusion(opt)
+netF = mlp.FusionNet(opt.res_size, 1024, opt.hfSize)
 print(netF)
 
 #------------------------------------------------------------------------------#
@@ -110,8 +110,8 @@ triplet_criterion = nn.TripletMarginLoss(margin=1.0, p=2)
 #------------------------------------------------------------------------------#
 
 # create input tensor
-input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
-input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
+input_res = torch.FloatTensor(opt.batch_size, opt.res_size)
+input_att = torch.FloatTensor(opt.batch_size, opt.att_size)
 input_label = torch.LongTensor(opt.batch_size)
 input_index = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
@@ -256,7 +256,7 @@ for epoch in range(opt.nepoch):
 #------------------------------------------------------------------------------#
 
         ################################
-        # R TRAINING
+        # REVERSE NET TRAINING
         ################################
         netR.zero_grad()
 
@@ -345,7 +345,7 @@ model = '/frwgan'
 # exp_type = '/base/'
 exp_type = '/e5_v1/'
 
-root = '/data0/xingyun/docker/mmcgan_torch030/fig' + exp_set + model + exp_type + opt.dataset
+root = '/data0/docker/xingyun/projects/mmcgan/fig' + exp_set + model + exp_type + opt.dataset
 
 np.save(file=root+'/label', arr=tsne_label) # 数据的标签
 

@@ -20,7 +20,7 @@ from torch.autograd import Variable
 import numpy as np
 from sklearn.manifold import TSNE
 
-sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 
 from util import tools
 from util import mlp
@@ -64,13 +64,13 @@ print("# of training samples: ", data.ntrain)
 #------------------------------------------------------------------------------#
 
 # Generator initialize
-netG = mlp.MLP_G(opt)
+netG = mlp.G(opt.att_size + opt.nz, opt.ngh, opt.res_size)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 # Discriminator initialize
-netD = mlp.MLP_CRITIC(opt)
+netD = mlp.Dis(opt.res_size + opt.att_size, opt.ndh)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
@@ -84,8 +84,8 @@ optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 #------------------------------------------------------------------------------#
 
 # create input tensor
-input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
-input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
+input_res = torch.FloatTensor(opt.batch_size, opt.res_size)
+input_att = torch.FloatTensor(opt.batch_size, opt.att_size)
 input_label = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
 
@@ -113,9 +113,9 @@ def sample():
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
-    syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
+    syn_feature = torch.FloatTensor(nclass*num, opt.res_size)
     syn_label = torch.LongTensor(nclass*num) 
-    syn_att = torch.FloatTensor(num, opt.attSize)
+    syn_att = torch.FloatTensor(num, opt.att_size)
     syn_noise = torch.FloatTensor(num, opt.nz)
     if opt.cuda:
         syn_att = syn_att.cuda()

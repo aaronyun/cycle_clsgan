@@ -12,7 +12,7 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
-sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 
 from util import tools, mlp, opts
 from util.eval import classifier, classifier2
@@ -46,12 +46,12 @@ data = tools.DATA_LOADER(opt)
 print("# of training samples: ", data.ntrain)
 
 # initialize generator and discriminator
-netG = mlp.MLP_G(opt)
+netG = mlp.G(opt.att_size + opt.nz, opt.ngh, opt.res_size)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
-netD = mlp.MLP_CRITIC(opt)
+netD = mlp.Dis(opt.res_size + opt.att_size, opt.ndh)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
@@ -60,8 +60,8 @@ print(netD)
 cls_criterion = nn.NLLLoss()
 
 # create input tensor
-input_res = torch.FloatTensor(opt.batch_size, opt.resSize)
-input_att = torch.FloatTensor(opt.batch_size, opt.attSize)
+input_res = torch.FloatTensor(opt.batch_size, opt.res_size)
+input_att = torch.FloatTensor(opt.batch_size, opt.att_size)
 input_label = torch.LongTensor(opt.batch_size)
 noise = torch.FloatTensor(opt.batch_size, opt.nz)
 
@@ -90,9 +90,9 @@ def sample():
 
 def generate_syn_feature(netG, classes, attribute, num):
     nclass = classes.size(0)
-    syn_feature = torch.FloatTensor(nclass*num, opt.resSize)
+    syn_feature = torch.FloatTensor(nclass*num, opt.res_size)
     syn_label = torch.LongTensor(nclass*num) 
-    syn_att = torch.FloatTensor(num, opt.attSize)
+    syn_att = torch.FloatTensor(num, opt.att_size)
     syn_noise = torch.FloatTensor(num, opt.nz)
     if opt.cuda:
         syn_att = syn_att.cuda()
@@ -140,7 +140,7 @@ optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
     
 # train a classifier on seen classes, obtain \theta of Equation (4)
-pretrain_cls = classifier.CLASSIFIER(data.train_feature, tools.map_label(data.train_label, data.seenclasses), data.seenclasses.size(0), opt.resSize, opt.cuda, 0.001, 0.5, 50, 100, opt.pretrain_classifier)
+pretrain_cls = classifier.CLASSIFIER(data.train_feature, tools.map_label(data.train_label, data.seenclasses), data.seenclasses.size(0), opt.res_size, opt.cuda, 0.001, 0.5, 50, 100, opt.pretrain_classifier)
 
 # store best result and corresponding epoch
 max_H = 0

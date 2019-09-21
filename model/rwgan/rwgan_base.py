@@ -19,7 +19,7 @@ from torch.autograd import Variable
 import numpy as np
 from sklearn.manifold import TSNE
 
-sys.path.append('/data0/docker/xingyun/projects/mmcgan_torch030')
+sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 
 from util import opts
 from util import tools
@@ -63,13 +63,13 @@ print("# of training samples: ", data.ntrain)
 #------------------------------------------------------------------------------#
 
 # Generator Initialize
-netG = mlp.MLP_G(opt)
+netG = mlp.Gen(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 # Discriminator Initialize
-netD = mlp.MLP_CRITIC(opt)
+netD = mlp.Dis(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
@@ -144,7 +144,7 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # Data Sampling
-            input_vf, input_label, input_att, input_index = sample(opt, data)
+            input_vf, input_label, input_att, input_index = tools.sample(opt, data)
             input_vf_v = Variable(input_vf)
             input_att_v = Variable(input_att)
             input_label_v = Variable(input_label)
@@ -165,7 +165,7 @@ for epoch in range(opt.nepoch):
             d_fake.backward(one)
 
             # Gradient Penalty
-            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_res, d_gen_vf_v.data, input_attv)
+            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_vf_v.data, d_gen_vf_v.data, input_att_v)
             gradient_penalty.backward()
 
             # Wasserstein Distance
@@ -186,7 +186,7 @@ for epoch in range(opt.nepoch):
         netG.zero_grad()
 
         # Data Sampling
-        input_vf, input_label, input_att, input_index = sample(opt, data)
+        input_vf, input_label, input_att, input_index = tools.sample(opt, data)
         input_vf_v = Variable(input_vf)
         input_att_v = Variable(input_att)
         input_label_v = Variable(input_label)
@@ -221,7 +221,7 @@ for epoch in range(opt.nepoch):
         ## r training
         syn_att_v = netR(g_gen_vf_v)
         ## attribute consistency loss
-        R_cost = cos_criterion(syn_att_v, input_attv)
+        R_cost = cos_criterion(syn_att_v, input_att_v)
         R_cost = R_cost.mean()
 
         R_cost.backward(mone, retain_graph=True)
@@ -279,8 +279,9 @@ for epoch in range(opt.nepoch):
             # label of features
             tsne_label = (label.cpu()).numpy()
 
-
     netG.train()
+
+#------------------------------------------------------------------------------#
 
 if opt.gzsl:
     print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))

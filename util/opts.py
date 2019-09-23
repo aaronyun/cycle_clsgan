@@ -72,6 +72,7 @@ def parse():
     parser.add_argument('--rn_episodes', type=int, default=200000, help='times to train relation net in a epoch')    
     parser.add_argument('--netAtt', default='', help='path to netAtt (to continue training')
     parser.add_argument('--netRN', default='', help='path to netRN (to continue training')
+    parser.add_argument('--rn_batch_size', type=int, default=1024, help='batch size when training relation net')
 
 #------------------------------------------------------------------------------#
 

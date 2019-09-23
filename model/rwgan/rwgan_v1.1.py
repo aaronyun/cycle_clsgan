@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #------------------------------------------------------------------------------#
-# 
+# 用relation net实现端到端分类
 #------------------------------------------------------------------------------#
 
 from __future__ import print_function
@@ -15,6 +15,8 @@ import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
+from torch.utils.data import TensorDataset, DataLoader
+from torch.optim.lr_scheduler import StepLR
 
 import numpy as np
 from sklearn.manifold import TSNE
@@ -24,7 +26,7 @@ sys.path.append('/data0/docker/xingyun/projects/mmcgan')
 from util import opts
 from util import tools
 from util import mlp
-from util.eval import classifier, classifier2
+from util.eval import classifier, classifier2, rn_eval
 
 #------------------------------------------------------------------------------#
 
@@ -89,16 +91,33 @@ else:
     raise('Initialize Error of Reverse Net')
 print(netR)
 
+# Attribute Net Initialize
+netAtt = mlp.AttributeNet(opt)
+if opt.netAtt != '':
+    netAtt.load_state_dict(torch.load(opt.netAtt))
+print(netAtt)
+
+# Relation Net Initialize
+netRN = mlp.RelationNet(opt)
+if opt.netRN != '':
+    netAtt.load_state_dict(torch.load(opt.netRN))
+print(netRN)
+
 #------------------------------------------------------------------------------#
 
 # Setup Optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerR = optim.Adam(netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerAtt = optim.Adam(netAtt.parameters(), lr=1e-5, weight_decay=1e-5)
+# netAtt_scheduler = StepLR(optimizerAtt, step_size=30000, gamma=0.5)
+optimizerRN = optim.Adam(netRN.parameters(), lr=1e-5, weight_decay=1e-5)
+# netRN_scheduler = StepLR(optimizerRN, step_size=30000, gamma=0.5)
 
 # Loss Function
 cos_criterion = nn.CosineSimilarity()
 euc_criterion = nn.PairwiseDistance(p=2)
+mse_criterion = nn.MSELoss()
 
 #------------------------------------------------------------------------------#
 
@@ -110,11 +129,14 @@ if opt.cuda:
     netD.cuda()
     netG.cuda()
     netR.cuda()
+    netAtt.cuda()
+    netRN.cuda()
 
     noise = noise.cuda()
 
     cos_criterion = cos_criterion.cuda()
     euc_criterion = euc_criterion.cuda()
+    mse_criterion = mse_criterion.cuda()
 
     one = one.cuda()
     mone = mone.cuda()
@@ -240,33 +262,109 @@ for epoch in range(opt.nepoch):
 
     netG.eval()
 
+    ################################
+    # RELATION NET TRAINING
+    ################################
+    # Data Preperation
+    ## generate data for unseen class
+    syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
+    ## overall training data
+    train_X = torch.cat((data.train_feature, syn_feature), 0)
+    train_Y = torch.cat((data.train_label, syn_label), 0)
+
+    ## data iterator
+    train_data = TensorDataset(train_X, train_Y)
+    train_loader = DataLoader(train_data, batch_size=opt.rn_batch_size ,shuffle=True)
+
+    batch_counter = 1
+    for batch_features, batch_labels in train_loader:
+        # netAtt_scheduler.step(episode)
+        # netRN_scheduler.step(episode)
+
+        netAtt.zero_grad()
+        netRN.zero_grad()
+
+        unique_labels = torch.LongTensor(np.unique(batch_labels.numpy()))
+        unique_cls_num = unique_labels.size(0)
+        current_batch_size = batch_features.size(0)
+
+        # Relation Pair Preparation
+        ## attributes prepare
+        ### get unique attributes
+        unique_attributes = torch.index_select(data.attribute, 0, unique_labels)
+        ### up-sampling attributes
+        up_attributes_v = netAtt(Variable(unique_attributes).cuda()) # (cla_num, vf_size)
+        ### extend up-sampled attributes
+        up_attributes_ext = (up_attributes_v.data.cpu()).unsqueeze(0).repeat(current_batch_size, 1, 1) # extend the first dimension
+        ## visual features prepare
+        ### extend batch features
+        batch_features_ext = batch_features.unsqueeze(0).repeat(unique_cls_num, 1, 1)
+        batch_features_ext = torch.transpose(batch_features_ext, 0, 1)
+        ## relation pairs
+        relation_pairs = torch.cat((up_attributes_ext, batch_features_ext), 2).view(-1, 4096)
+
+        # Relation Score
+        relations = netRN(Variable(relation_pairs).cuda()).view(-1, unique_cls_num) # (batch, cls_num))
+
+        # One-hot Label
+        ## re-build batch_labels according to unique_labels
+        unique_labels = unique_labels.numpy()
+        re_batch_labels = []
+        for label in batch_labels.numpy():
+            index = np.argwhere(unique_labels == label)
+            re_batch_labels.append(int(index[0][0]))
+        re_batch_labels = torch.LongTensor(re_batch_labels)
+        ## one-hot labels
+        one_hot_labels_v = Variable(torch.zeros(current_batch_size, unique_cls_num).scatter_(1, re_batch_labels.view(-1, 1), 1)).cuda()
+
+        # Loss
+        loss = mse_criterion(relations, one_hot_labels_v)
+        loss.backward()
+
+        # if episode%20000 == 0:
+        #     print('Epoch/Episode:[{:^3d}/{:^6d}] RN Loss: {:^.4f}'.format(epoch+1, episode, loss.data[0]))
+        # print('Epoch/Batch:[{:^3d}/{:^4d}] RN Loss: {:^.4f}'.format(epoch+1, batch_counter, loss.data[0]))
+
+        optimizerAtt.step()
+        optimizerRN.step()
+
+        batch_counter = batch_counter + 1
+
+    netG.train()
+
+#------------------------------------------------------------------------------#
+
+    ################################
+    # EVALUATION
+    ################################
+    netAtt.eval()
+    netRN.eval()
+
     if opt.gzsl:
-        syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
+        acc_unseen = rn_eval.compute_accuracy(netAtt, netRN, data.test_unseen_feature, data.test_unseen_label, data.attribute)
+        acc_seen = rn_eval.compute_accuracy(netAtt, netRN, data.test_seen_feature, data.test_seen_label, data.attribute)
 
-        train_X = torch.cat((data.train_feature, syn_feature), 0)
-        train_Y = torch.cat((data.train_label, syn_label), 0)
-        nclass = opt.nclass_all
+        H = 2*acc_seen*acc_unseen / (acc_seen+acc_unseen)
 
-        cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc_unseen, acc_seen, H))
 
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
-
-        if cls_.H > max_H:
-            max_H = cls_.H
+        if H > max_H:
+            max_H = H
             corresponding_epoch = epoch
 
             # embedding for visual features
             vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
 
+            # embedding for hidden features
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hfv.data.cpu().numpy())
+            # hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
+
             # label of features
-            tsne_label = (label.cpu()).numpy()
+            tsne_label = (input_label.cpu()).numpy()
 
     else:
-        syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
-
-        cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
-        acc = cls_.acc
+        acc = compute_accuracy(netAtt, netRN, test_unseen_vf, test_unseen_label, all_attribute)
 
         print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
 
@@ -278,10 +376,15 @@ for epoch in range(opt.nepoch):
             vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
             vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
 
-            # label of features
-            tsne_label = (label.cpu()).numpy()
+            # embedding for hidden features
+            # hf_train_embed = TSNE(n_components=3).fit_transform(train_hf.data.cpu().numpy())
+            # hf_gen_embed = TSNE(n_components=3).fit_transform(gen_hf.cpu().numpy())
 
-    netG.train()
+            # input_label of features
+            tsne_label = (input_label.cpu()).numpy()
+
+    netAtt.train()
+    netRN.train()
 
 #------------------------------------------------------------------------------#
 
@@ -293,7 +396,7 @@ else:
 # save visualization data
 exp_set = '/gzsl'
 model = '/rwgan'
-exp_type = '/base/'
+exp_type = '/e8_v1.1/'
 
 root = '/data0/docker/xingyun/projects/mmcgan/fig' + exp_set + model + exp_type + opt.dataset
 

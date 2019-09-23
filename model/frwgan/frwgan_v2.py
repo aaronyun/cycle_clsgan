@@ -77,10 +77,6 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-# Fusion Net initialize
-netF = mlp.FusionNet(opt)
-print(netF)
-
 # Reverse Net Initialize
 if opt.r_hl == 1:
     netR = mlp.MLP_1HL_Dropout_FR(opt)
@@ -93,6 +89,10 @@ elif opt.r_hl == 4:
 else:
     raise('Initialize Error of Reverse Net')
 print(netR)
+
+# Fusion Net initialize
+netF = mlp.FusionNet(opt)
+print(netF)
 
 #------------------------------------------------------------------------------#
 

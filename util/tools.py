@@ -545,9 +545,10 @@ class DATA_LOADER(object):
         self.ntest_class = self.unseenclasses.size(0)
 
     def read_matdataset(self, opt):
-        """Read data of .mat suffix.
+        """Read data in matlab file.
 
         Args:
+            opt:
 
         Returns:
 

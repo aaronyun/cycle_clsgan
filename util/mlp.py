@@ -80,6 +80,8 @@ class robDis(nn.Module):
 
         return _bin, _multi
 
+#------------------------------------------------------------------------------#
+
 # GENERATOR
 class Gen(nn.Module):
     def __init__(self, opt):

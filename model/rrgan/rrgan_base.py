@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #------------------------------------------------------------------------------#
-# 
+# 采用rob-gan的实现
 #------------------------------------------------------------------------------#
 
 from __future__ import print_function
@@ -51,6 +51,8 @@ torch.manual_seed(opt.manualSeed)
 if opt.cuda:
     torch.cuda.manual_seed_all(opt.manualSeed)
 
+#------------------------------------------------------------------------------#
+
 # running environment setting
 cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
@@ -65,26 +67,26 @@ print("# of training samples: ", data.ntrain)
 #------------------------------------------------------------------------------#
 
 # Generator Initialize
-netG = mlp.G(opt.att_size + opt.nz, opt.ngh, opt.res_size)
+netG = mlp.Gen(opt)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 # Discriminator Initialize
-netD = mlp.robDis(opt.res_size + opt.att_size, opt.ndh, opt.ntrain_class)
+netD = mlp.robDis(opt)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
 # Reverse Net Initialize
 if opt.r_hl == 1:
-    netR = mlp.MLP_1HL_Dropout_R(opt.res_size, 4096, opt.att_size)
+    netR = mlp.MLP_1HL_Dropout_R(opt)
 elif opt.r_hl == 2:
-    netR = mlp.MLP_2HL_Dropout_R(opt.res_size, opt.nrh1, opt.nrh2, opt.att_size)
+    netR = mlp.MLP_2HL_Dropout_R(opt)
 elif opt.r_hl == 3:
-    netR = mlp.MLP_3HL_Dropout_R(opt.res_size, opt.nrh1, opt.nrh2, opt.nrh3, opt.att_size)
+    netR = mlp.MLP_3HL_Dropout_R(opt)
 elif opt.r_hl == 4:
-    netR = mlp.MLP_4HL_Dropout_R(opt.res_size, opt.nrh1, opt.nrh2, opt.nrh3, opt.nrh4, opt.att_size)
+    netR = mlp.MLP_4HL_Dropout_R(opt)
 else:
     raise('Initialize Error of R')
 print(netR)
@@ -102,16 +104,10 @@ euc_criterion = nn.PairwiseDistance(p=2)
 
 #------------------------------------------------------------------------------#
 
-# Create Input Iensor
-input_res = torch.FloatTensor(opt.batch_size, opt.res_size)
-input_att = torch.FloatTensor(opt.batch_size, opt.att_size)
-input_label = torch.LongTensor(opt.batch_size)
-input_index = torch.LongTensor(opt.batch_size)
-noise = torch.FloatTensor(opt.batch_size, opt.nz)
-
 zeros_v = Variable(torch.FloatTensor(opt.batch_size).fill_(0))
 ones_v = Variable(torch.FloatTensor(opt.batch_size).fill_(1))
 
+noise = torch.FloatTensor(opt.batch_size, opt.nz)
 one = torch.FloatTensor([1])
 mone = one * -1
 
@@ -120,76 +116,14 @@ if opt.cuda:
     netG.cuda()
     netR.cuda()
 
-    noise, input_res, input_att, input_label, input_index  = noise.cuda(), input_res.cuda(), input_att.cuda(), input_label.cuda(), input_index.cuda()
-
-    zeros_v = zeros_v.cuda()
-    ones_v = ones_v.cuda()
-
     cos_criterion = cos_criterion.cuda()
     euc_criterion = euc_criterion.cuda()
 
+    noise = noise.cuda()
+    zeros_v = zeros_v.cuda()
+    ones_v = ones_v.cuda()
     one = one.cuda()
     mone = mone.cuda()
-
-#------------------------------------------------------------------------------#
-
-# auxiliary functions
-def sample():
-    batch_feature, batch_label, batch_att, batch_index = data.next_batch(opt.batch_size)
-
-    input_res.copy_(batch_feature)
-    input_att.copy_(batch_att)
-    input_label.copy_(tools.map_label(batch_label, data.seenclasses))
-    input_index.copy_(batch_index)
-
-def generate_syn_feature(netG, classes, attribute, num):
-    nclass = classes.size(0)
-    syn_feature = torch.FloatTensor(nclass*num, opt.res_size)
-    syn_label = torch.LongTensor(nclass*num) 
-    syn_att = torch.FloatTensor(num, opt.att_size)
-    syn_noise = torch.FloatTensor(num, opt.nz)
-    if opt.cuda:
-        syn_att = syn_att.cuda()
-        syn_noise = syn_noise.cuda()
-
-    for i in range(nclass):
-        iclass = classes[i]
-        iclass_att = attribute[iclass]
-
-        # temp = iclass_att.clone()
-        # temp = temp.repeat(num, 1)
-        # syn_att.copy_(temp)
-        syn_att.copy_(iclass_att.repeat(num, 1))
-
-        syn_noise.normal_(0, 1)
-        output = netG(Variable(syn_noise, requires_grad=False), Variable(syn_att, requires_grad=False))
-        syn_feature.narrow(0, i*num, num).copy_(output.data.cpu())
-        syn_label.narrow(0, i*num, num).fill_(iclass)
-
-    return syn_feature, syn_label
-
-def calc_gradient_penalty(netD, real_data, fake_data, input_att):
-    alpha = torch.rand(opt.batch_size, 1)
-    alpha = alpha.expand(real_data.size())
-    if opt.cuda:
-        alpha = alpha.cuda()
-
-    interpolates = alpha * real_data + ((1 - alpha) * fake_data)
-    if opt.cuda:
-        interpolates = interpolates.cuda()
-    interpolates = Variable(interpolates, requires_grad=True)
-
-    disc_interpolates = netD(interpolates, input_att)
-
-    ones = torch.ones(disc_interpolates.size())
-    if opt.cuda:
-        ones = ones.cuda()
-
-    gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates, grad_outputs=ones, create_graph=True, retain_graph=True, only_inputs=True)[0]
-
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * opt.lambda1
-
-    return gradient_penalty
 
 #------------------------------------------------------------------------------#
 
@@ -218,8 +152,8 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # Data Sampling
-            sample()
-            input_vf_v = Variable(input_res)
+            input_vf, input_label, input_att, input_index = tools.sample(opt, data)
+            input_vf_v = Variable(input_vf)
             input_att_v = Variable(input_att)
             input_label_v = Variable(input_label)
 
@@ -257,8 +191,8 @@ for epoch in range(opt.nepoch):
         netG.zero_grad()
 
         # Data Sampling
-        sample()
-        input_vf_v = Variable(input_res)
+        input_vf, input_label, input_att, input_index = tools.sample(opt, data)
+        input_vf_v = Variable(input_vf)
         input_att_v = Variable(input_att)
         input_label_v = Variable(input_label)
 

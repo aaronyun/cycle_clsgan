@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #------------------------------------------------------------------------------#
-# 
+# 保持reverse网络不变，采用更加简单的fuse方法，并且对hidden features直接进行分类
 #------------------------------------------------------------------------------#
 
 from __future__ import print_function
@@ -15,6 +15,7 @@ import torch.autograd as autograd
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
+from torch.utils.data import TensorDataset, DataLoader
 
 import numpy as np
 from sklearn.manifold import TSNE
@@ -207,10 +208,41 @@ for epoch in range(opt.nepoch):
 
 #------------------------------------------------------------------------------#
 
-        # For Visualization
+        ################################
+        # FUSION TRAINING
+        ################################
+
+        # Data Prepare
+        train_vf = torch.cat((input_vf_v.data, g_gen_vf_v.data), 0)
+        train_label = input_label_v.data.repeat(1,2)
+
+        train_data = TensorDataset(train_vf, train_label)
+        train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
+
+        # Fusion Net Training
+        for iter_f in range(opt.fusion_iter):
+            netF.zero_grad()
+            for batch_vf, batch_label in train_loader:
+                batch_vf_v = Variable(batch_vf)
+                batch_label_v = Variable(batch_label)
+
+                ## training
+                fusion_vf = netF(batch_vf_v)
+
+                ## loss
+
+
+
+        # generate hidden feature after F training
+        gen_hf_v = netF(g_gen_vf_v)
+
+#------------------------------------------------------------------------------#
+
+        # for visualization
         train_vf = input_vf_v.data
         gen_vf = g_gen_vf_v.data
         label = input_label_v.data
+        gen_hf = gen_hf_v.data
 
 #------------------------------------------------------------------------------#
 
@@ -224,8 +256,8 @@ for epoch in range(opt.nepoch):
         syn_att_v = netR(g_gen_vf_v)
         ## attribute consistency loss
         R_cost = cos_criterion(syn_att_v, input_att_v)
-        R_cost = R_cost.mean()
-
+        R_cost = R_cost.mean
+        # update r net
         R_cost.backward(mone, retain_graph=True)
         optimizerR.step()
 
@@ -240,50 +272,9 @@ for epoch in range(opt.nepoch):
 
     netG.eval()
 
-    if opt.gzsl:
-        syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
-
-        train_X = torch.cat((data.train_feature, syn_feature), 0)
-        train_Y = torch.cat((data.train_label, syn_label), 0)
-        nclass = opt.nclass_all
-
-        cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
-
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
-
-        if cls_.H > max_H:
-            max_H = cls_.H
-            corresponding_epoch = epoch
-
-            # embedding for visual features
-            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
-            vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
-
-            # label of features
-            tsne_label = (label.cpu()).numpy()
-
-    else:
-        syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
-
-        cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
-        acc = cls_.acc
-
-        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
-
-        if acc > max_acc:
-            max_acc = acc
-            corresponding_epoch = epoch
-
-            # embedding for visual features
-            vf_train_embed = TSNE(n_components=3).fit_transform(train_vf.cpu().numpy())
-            vf_gen_embed = TSNE(n_components=3).fit_transform(gen_vf.cpu().numpy())
-
-            # label of features
-            tsne_label = (label.cpu()).numpy()
+    TODO
 
     netG.train()
-
-#------------------------------------------------------------------------------#
 
 if opt.gzsl:
     print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
@@ -292,7 +283,7 @@ else:
 
 # save visualization data
 exp_set = '/gzsl'
-model = '/rwgan'
+model = '/frwgan'
 exp_type = '/base/'
 
 root = '/data0/docker/xingyun/projects/mmcgan/fig' + exp_set + model + exp_type + opt.dataset
@@ -301,3 +292,6 @@ np.save(file=root+'/label', arr=tsne_label) # 数据的标签
 
 np.save(file=root+'/vf_train_embed', arr=vf_train_embed) # 训练集的vf
 np.save(file=root+'/vf_gen_embed', arr=vf_gen_embed) # 生成的vf
+
+# np.save(file=root+'/hf_train_embed', arr=hf_train_embed)
+np.save(file=root+'/hf_gen_embed', arr=hf_gen_embed) # 生成的hf

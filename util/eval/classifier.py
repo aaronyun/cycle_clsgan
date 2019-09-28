@@ -64,7 +64,7 @@ class CLASSIFIER:
                 loss = self.criterion(output, labelv)
                 loss.backward()
                 self.optimizer.step()
-                     
+
     def next_batch(self, batch_size):
         start = self.index_in_epoch
         # shuffle the data at the first epoch
@@ -126,8 +126,11 @@ class CLASSIFIER:
 class LINEAR_LOGSOFTMAX(nn.Module):
     def __init__(self, input_dim, nclass):
         super(LINEAR_LOGSOFTMAX, self).__init__()
-        self.fc = nn.Linear(input_dim, nclass)
+        self.fc = nn.Linear(input_dim, nclass) 
+
         self.logic = nn.LogSoftmax(dim=1)
+
     def forward(self, x): 
         o = self.logic(self.fc(x))
+
         return o  

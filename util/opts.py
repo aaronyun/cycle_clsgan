@@ -57,6 +57,7 @@ def parse():
     parser.add_argument('--re_hl4', type=int, default=128, help='size of the fourth layer in R net')
     parser.add_argument('--drop_rate', type=float, default=0.2, help='the rate of unit to drop in R net')
     parser.add_argument('--r_weight', type=float, default=1, help='weight of att generate loss')
+    parser.add_argument('--netR', default='', help='path to netR(to continuing training)')
 
     # Fusion Net Setting
     parser.add_argument('--hf_size', type=int, default=512, help='hidden feature size(final layer size of fusion net)')

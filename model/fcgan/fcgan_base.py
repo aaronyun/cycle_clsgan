@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #------------------------------------------------------------------------------#
-# 保持reverse网络不变，采用更加简单的fuse方法，并且对hidden features直接进行分类
+# reverse + fusion + end-to-end(class with hidden features)
 #------------------------------------------------------------------------------#
 
 from __future__ import print_function
@@ -116,18 +116,18 @@ noise = torch.FloatTensor(opt.batch_size, opt.nz)
 one = torch.FloatTensor([1])
 mone = one * -1
 
-if opt.cuda:
-    netD.cuda()
-    netG.cuda()
-    netR.cuda()
+# if opt.cuda:
+#     netD.cuda()
+#     netG.cuda()
+#     netR.cuda()
 
-    noise = noise.cuda()
+#     noise = noise.cuda()
 
-    cos_criterion = cos_criterion.cuda()
-    euc_criterion = euc_criterion.cuda()
+#     cos_criterion = cos_criterion.cuda()
+#     euc_criterion = euc_criterion.cuda()
 
-    one = one.cuda()
-    mone = mone.cuda()
+#     one = one.cuda()
+#     mone = mone.cuda()
 
 #------------------------------------------------------------------------------#
 
@@ -137,9 +137,9 @@ max_acc = 0.0
 corresponding_epoch = 0
 
 if opt.gzsl:
-    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |  ACC_seen  |    H    |')
+    print('EPOCH          |  D_cost  |  G_cost  |  F_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |  ACC_seen  |    H    |')
 else:
-    print('EPOCH          |  D_cost  |  G_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |')
+    print('EPOCH          |  D_cost  |  G_cost  |  F_cost  |  R_cost  |  Wasserstein_D  |  ACC_unseen  |')
 
 for epoch in range(opt.nepoch):
     for i in range(0, data.ntrain, opt.batch_size):
@@ -156,35 +156,33 @@ for epoch in range(opt.nepoch):
             netD.zero_grad()
 
             # Data Sampling
-            input_vf, input_label, input_att, input_index = tools.sample(opt, data)
-            input_vf_v = Variable(input_vf)
-            input_att_v = Variable(input_att)
-            input_label_v = Variable(input_label)
+            batch_vf, batch_label, batch_att, batch_index = tools.sample(opt, data)
 
             # Train D with Real Data
-            d_real = netD(input_vf_v, input_att_v)
-            d_real = d_real.mean()
-            d_real.backward(mone)
+            d_real_v = netD(Variable(batch_vf), Variable(batch_att))
+            d_real_v = d_real_v.mean()
+            d_real_v.backward(mone)
 
             # Train D with Fake Data
             ## generate fake data
             noise.normal_(0, 1)
-            noise_v = Variable(noise)
-            d_gen_vf_v = netG(noise_v, input_att_v)
+            gen_vf_v = netG(Variable(noise), Variable(batch_att))
             ## training
-            d_fake = netD(d_gen_vf_v.detach(), input_att_v)
-            d_fake = d_fake.mean()
-            d_fake.backward(one)
+            d_fake_v = netD(gen_vf_v.detach(), Variable(batch_att))
+            d_fake_v = d_fake_v.mean()
+            d_fake_v.backward(one)
 
             # Gradient Penalty
-            gradient_penalty = tools.calc_gradient_penalty(opt, netD, input_vf_v.data, d_gen_vf_v.data, input_att_v)
-            gradient_penalty.backward()
+            gradient_penalty_v = tools.calc_gradient_penalty(opt, netD, batch_vf, gen_vf_v.data, Variable(batch_att))
+            gradient_penalty_v.backward()
 
             # Wasserstein Distance
-            Wasserstein_D = d_real - d_fake
+            Wasserstein_D = d_real_v - d_fake_v
 
             # Overall Discriminator Loss
-            D_cost = d_fake - d_real + gradient_penalty
+            D_cost = d_fake_v - d_real_v + gradient_penalty_v
+
+            # Update Parameters
             optimizerD.step()
 
         for p in netD.parameters():
@@ -198,22 +196,41 @@ for epoch in range(opt.nepoch):
         netG.zero_grad()
 
         # Data Sampling
-        input_vf, input_label, input_att, input_index = tools.sample(opt, data)
-        input_vf_v = Variable(input_vf)
-        input_att_v = Variable(input_att)
-        input_label_v = Variable(input_label)
+        batch_vf, batch_label, batch_att, batch_index = tools.sample(opt, data)
 
         # Train Generator with Discriminator
         ## generate fake data
         noise.normal_(0, 1)
-        noise_v = Variable(noise)
-        gen_train_vf_v = netG(noise_v, input_att_v)
+        gen_train_vf_v = netG(Variable(noise), Variable(batch_att))
         ## training
-        g_fake = netD(gen_train_vf_v, input_att_v)
+        g_fake = netD(gen_train_vf_v, Variable(batch_att))
         g_fake = g_fake.mean()
 
         # Generator Loss
         G_cost = -g_fake # Decrease
+
+#------------------------------------------------------------------------------#
+
+        ################################
+        # FUSION TRAINING
+        ################################
+        # Data Preparation
+        train_vf = batch_vf
+        gen_vf = gen_train_vf_v.data
+
+        # Fusion Net Training
+        for iter_f in range(opt.fusion_iter):
+            netF.zero_grad() 
+            for batch_vf, batch_label in train_loader:
+                batch_vf_v = Variable(batch_vf)
+                batch_label_v = Variable(batch_label)
+
+                ## training
+                fusion_vf = netF(batch_vf_v)
+
+                ## loss
+                # 1. 分类损失
+                # 2. 聚合损失
 
 #------------------------------------------------------------------------------#
 
@@ -226,7 +243,7 @@ for epoch in range(opt.nepoch):
         ## r training
         syn_att_v = netR(gen_train_vf_v)
         ## attribute consistency loss
-        R_cost = cos_criterion(syn_att_v, input_att_v)
+        R_cost = cos_criterion(syn_att_v, Variable(batch_att))
         R_cost = R_cost.mean
         # update r net
         R_cost.backward(mone, retain_graph=True)
@@ -239,44 +256,50 @@ for epoch in range(opt.nepoch):
         errG.backward()
         optimizerG.step()
 
+
 #------------------------------------------------------------------------------#
 
         ################################
-        # FUSION TRAINING
+        # CLASSIFICATION
         ################################
-
-        # Data Preparation
-        train_vf = torch.cat((input_vf_v.data, g_gen_vf_v.data), 0)
-        train_label = input_label_v.data.repeat(1,2)
-
-        train_data = TensorDataset(train_vf, train_label)
-        train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
-
-        # Fusion Net Training
-        for iter_f in range(opt.fusion_iter):
-            netF.zero_grad()
-            for batch_vf, batch_label in train_loader:
-                batch_vf_v = Variable(batch_vf)
-                batch_label_v = Variable(batch_label)
-
-                ## training
-                fusion_vf = netF(batch_vf_v)
-
-                ## loss
-
-
-#------------------------------------------------------------------------------#
 
     netG.eval()
 
-    # Classification
-    # 端到端的意思是，不单独用生成的数据再去训练一个分类器，而是在每一轮训练过程中，将特征喂进分类网络直接得到分类结果，而没有训练的过程
+    if opt.gzsl:
+        syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
+
+        train_X = torch.cat((data.train_feature, syn_feature), 0)
+        train_Y = torch.cat((data.train_label, syn_label), 0)
+        nclass = opt.nclass_all
+
+        cls_ = classifier2.CLASSIFIER(train_X, train_Y, data, nclass, opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, True)
+
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|{:^12.4f}|{:^9.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], cls_.acc_unseen, cls_.acc_seen, cls_.H))
+
+        if cls_.H > max_H:
+            max_H = cls_.H
+            corresponding_epoch = epoch
+
+    else:
+        syn_feature, syn_label = tools.generate_syn_feature(opt, netG, data.unseenclasses, data.attribute, opt.syn_num)
+
+        cls_ = classifier2.CLASSIFIER(syn_feature, tools.map_label(syn_label, data.unseenclasses), data, data.unseenclasses.size(0), opt.cuda, opt.classifier_lr, 0.5, 25, opt.syn_num, False)
+        acc = cls_.acc
+
+        print('[{:^4d}/{:^4d}]    |{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^10.4f}|{:^17.4f}|{:^14.4f}|'.format(epoch+1, opt.nepoch, D_cost.data[0], G_cost.data[0], F_cost.data[0], R_cost.data[0], Wasserstein_D.data[0], acc))
+
+        if acc > max_acc:
+            max_acc = acc
+            corresponding_epoch = epoch
 
     netG.train()
 
 #------------------------------------------------------------------------------#
 
+# Output Best Results
 if opt.gzsl:
     print('max H: %f in epoch: %d' % (max_H, corresponding_epoch+1))
 else:
     print('max unseen class acc: %f in epoch: %d' % (max_acc, corresponding_epoch+1))
+
+#------------------------------------------------------------------------------#

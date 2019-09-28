@@ -41,11 +41,11 @@ def sample(opt, data):
     batch_label = torch.LongTensor(batch_label)
     batch_index = torch.LongTensor(batch_index)
 
-    if opt.cuda:
-        batch_vf = batch_vf.cuda()
-        batch_label = batch_label.cuda()
-        batch_att = batch_att.cuda()
-        batch_index = batch_index.cuda()
+    # if opt.cuda:
+    #     batch_vf = batch_vf.cuda()
+    #     batch_label = batch_label.cuda()
+    #     batch_att = batch_att.cuda()
+    #     batch_index = batch_index.cuda()
 
     return batch_vf, batch_label, batch_att, batch_index
 
